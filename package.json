@@ -1,0 +1,27 @@
+{
+  "name": "nardi",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:engine": "npm run build -w @nardi/engine",
+    "build": "npm run build -w @nardi/engine && npm run build -w @nardi/api && npm run build -w @nardi/web",
+    "dev:api": "npm run start:dev -w @nardi/api",
+    "dev:web": "npm run dev -w @nardi/web",
+    "test": "npm test -w @nardi/engine && npm test -w @nardi/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "multer": "^2.5.0",
+    "deepmerge-ts": "^8.0.2",
+    "sharp": "^0.35.5",
+    "postcss": "^8.5.32"
+  }
+}

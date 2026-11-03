@@ -1,0 +1,12 @@
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://bazar:bazar@localhost:5432/nardi_test?schema=public';
+process.env.REDIS_URL = '';
+process.env.PORT = process.env.TEST_PORT ?? '4100';
+process.env.INTERNAL_BASE_URL = `http://127.0.0.1:${process.env.PORT}`;
+process.env.WEB_ORIGIN = 'http://localhost:3000';
+process.env.PAYMENTS_PROVIDER = 'test';
+process.env.PAYMENT_WEBHOOK_SECRET = 'test-webhook-secret-0123456789';
+process.env.BOT_DELAY_MS = '1';
+process.env.MATCHMAKER_ENABLED = 'true';
+process.env.RATE_LIMIT_PER_MIN = '100000';
+process.env.RATE_LIMIT_MULTIPLIER = '1000';

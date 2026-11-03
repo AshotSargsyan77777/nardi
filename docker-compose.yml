@@ -1,0 +1,88 @@
+# Production-like stack. Copy .env.example to .env and fill in the secrets first.
+#   docker compose up -d --build
+#   docker compose run --rm api npm run create-admin -- --email you@example.com --nickname Owner
+name: nardi
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nardi
+      POSTGRES_USER: nardi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nardi -d nardi"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    image: nardi-api
+    command: ["sh", "scripts/predeploy.sh"]
+    environment: &api-env
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://nardi:${POSTGRES_PASSWORD}@postgres:5432/nardi?schema=public
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      WS_TICKET_SECRET: ${WS_TICKET_SECRET:?set WS_TICKET_SECRET in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: "1"
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-none}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      LEGAL_MONEY_MODE_APPROVED: ${LEGAL_MONEY_MODE_APPROVED:-false}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    image: nardi-api
+    restart: unless-stopped
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args: { API_INTERNAL_URL: "http://api:4000" }
+    restart: unless-stopped
+    depends_on: [api]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["${HTTP_PORT:-8080}:80"]
+    volumes: ["./infra/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    depends_on: [web, api]
+
+  # Daily logical backups to ./backups (enable with: docker compose --profile backup up -d)
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ["./backups:/backups"]
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h postgres -U nardi -d nardi -Fc -f /backups/nardi-$$(date -u +%Y%m%dT%H%M%SZ).dump && find /backups -name '*.dump' -mtime +14 -delete; sleep 86400; done"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:

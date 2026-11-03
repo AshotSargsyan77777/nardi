@@ -1,0 +1,74 @@
+@import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/600.css';
+@import '@fontsource/manrope/700.css';
+@import '@fontsource/manrope/800.css';
+@import '@fontsource/noto-sans-armenian/400.css';
+@import '@fontsource/noto-sans-armenian/600.css';
+@import '@fontsource/noto-sans-armenian/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #05080f;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, rgba(22, 153, 106, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(234, 189, 85, 0.08), transparent 60%),
+    linear-gradient(180deg, #0a1020 0%, #05080f 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Subtle Armenian-inspired ornament used as a divider */
+.ornament {
+  height: 10px;
+  background:
+    radial-gradient(circle at 5px 5px, rgba(234, 189, 85, 0.5) 1.5px, transparent 2px) 0 0 / 20px 10px repeat-x;
+  opacity: 0.6;
+}
+
+/* table cloth and card back colours (chosen per device, see lib/look.ts) */
+:root { --felt-1: #13875e; --felt-2: #0d5e41; --felt-3: #063524; --back-1: #0d5e41; --back-2: #063524; }
+:root[data-table='blue'] { --felt-1: #1c6aa8; --felt-2: #124a7a; --felt-3: #0a2a48; }
+:root[data-table='red'] { --felt-1: #9c2b3d; --felt-2: #6e1b2a; --felt-3: #3d0d16; }
+:root[data-table='black'] { --felt-1: #3a3f4a; --felt-2: #23272f; --felt-3: #111318; }
+:root[data-back='red'] { --back-1: #a2283c; --back-2: #5a1020; }
+:root[data-back='blue'] { --back-1: #1f5f9a; --back-2: #0d2f52; }
+:root[data-back='black'] { --back-1: #343842; --back-2: #121419; }
+.felt {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(255, 255, 255, 0.07), transparent 60%),
+    repeating-radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.04) 0 2px, transparent 2px 4px),
+    radial-gradient(ellipse at center, var(--felt-1) 0%, var(--felt-2) 50%, var(--felt-3) 100%);
+}
+.card-back { background: linear-gradient(135deg, var(--back-1), var(--back-2)); }
+
+.scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+
+table.data { width: 100%; font-size: 0.875rem; }
+table.data th { text-align: left; font-weight: 600; color: rgba(255,255,255,0.45); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); white-space: nowrap; }
+table.data td { padding: 0.65rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
+table.data tr:hover td { background: rgba(255,255,255,0.02); }
+
+@media print {
+  header, nav, footer, .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}
+
+/* horizontal carousels without a visible scrollbar */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+/* banner with notched ends (lobby mode titles) */
+.ribbon { clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 50%, 100% 100%, 0 100%, 12px 50%); }

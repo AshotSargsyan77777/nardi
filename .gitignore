@@ -1,0 +1,11 @@
+node_modules
+dist
+.next
+.env
+.env.local
+coverage
+*.log
+apps/web/next-env.d.ts
+backups/
+*.tsbuildinfo
+dump.rdb

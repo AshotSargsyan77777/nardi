@@ -1,0 +1,11 @@
+# Railway service "web" — set "Config file path" to apps/web/railway.toml (root directory: repo root)
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/web/Dockerfile"
+watchPatterns = ["apps/web/**", "packages/engine/**", "package-lock.json"]
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

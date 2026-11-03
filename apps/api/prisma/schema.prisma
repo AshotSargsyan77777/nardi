@@ -1,0 +1,670 @@
+// BAZAR BLOT — database schema (PostgreSQL)
+// Money-like values (coins) are stored as BigInt; fiat prices are stored in minor units (integers).
+// Ledger, audit and match-event tables are append-only: UPDATE/DELETE is blocked by triggers
+// created in the initial migration (see migrations/*/migration.sql).
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  SUPPORT
+  ADMIN
+  SUPERADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id                 String     @id @default(uuid()) @db.Uuid
+  email              String     @unique
+  nickname           String
+  nicknameLower      String     @unique
+  /// what the nickname looks like (look-alike letters folded), kept unique by the app
+  nicknameSkeleton   String?
+  passwordHash       String
+  role               Role       @default(USER)
+  status             UserStatus @default(ACTIVE)
+  blockedReason      String?
+  avatar             String     @default("pomegranate")
+  locale             String     @default("hy")
+  rating             Int        @default(1200)
+  xp                 Int        @default(0)
+  level              Int        @default(1)
+  gamesPlayed        Int        @default(0)
+  wins               Int        @default(0)
+  losses             Int        @default(0)
+  /// { notifications: {...}, privacy: {...}, chatEnabled: bool }
+  settings           Json       @default("{}")
+  /// Per-user restrictions set by admins: { noStakes, chatBanned, noPurchases }
+  restrictions       Json       @default("{}")
+  birthDate          DateTime?  @db.Date
+  kycStatus          KycStatus  @default(NONE)
+  tokenVersion       Int        @default(0)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  lastLoginAt        DateTime?
+  lastSeenAt         DateTime?
+  /// «Invite a friend»: who invited this player, and when both got the bonus
+  referredById       String?    @db.Uuid
+  referredBy         User?      @relation("referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals          User[]     @relation("referrals")
+  referralRewardedAt DateTime?
+
+  sessions      Session[]
+  accounts      LedgerAccount[]
+  matchPlayers  MatchPlayer[]
+  orders        PaymentOrder[]
+  withdrawals   WithdrawalRequest[]
+  achievements  UserAchievement[]
+  notifications Notification[]
+  tickets       SupportTicket[]
+  roomMembers   RoomMember[]
+  photo         AvatarPhoto?
+  blocks        UserBlock[]         @relation("blocker")
+  blockedBy     UserBlock[]         @relation("blocked")
+  friendsSent   Friendship[]        @relation("requester")
+  friendsGot    Friendship[]        @relation("addressee")
+  pushSubs      PushSubscription[]
+
+  @@index([rating])
+  @@index([nicknameSkeleton])
+  @@index([createdAt])
+  @@index([referredById])
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  family     String    @db.Uuid
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?   @db.Uuid
+
+  @@index([userId])
+  @@index([family])
+}
+
+// ---------------------------------------------------------------- platform settings
+
+/// Current value of an owner-editable setting (currency name, bonuses, limits, feature flags...).
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?  @db.Uuid
+}
+
+/// Append-only history of every setting change (who, when, previous and new value).
+model SettingChange {
+  id        BigInt   @id @default(autoincrement())
+  key       String
+  oldValue  Json?
+  newValue  Json
+  adminId   String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+model Currency {
+  code        String   @id // BLOT (purchasable) | FUN (practice, never redeemable)
+  name        String
+  symbol      String
+  purchasable Boolean  @default(false)
+  redeemable  Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
+/// Coin purchase rate history. The "current" rate is the latest row per fiat currency.
+model CoinRate {
+  id            String   @id @default(uuid()) @db.Uuid
+  fiatCurrency  String
+  /// How many coins are given per 1 major unit of fiat currency (e.g. 0.2 coins per AMD).
+  coinsPerUnit  Decimal  @db.Decimal(18, 6)
+  previousValue Decimal? @db.Decimal(18, 6)
+  createdById   String?  @db.Uuid
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([fiatCurrency, createdAt])
+}
+
+model CoinPackage {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  coins        BigInt
+  bonusCoins   BigInt   @default(0)
+  /// If set, a fixed price in minor units; otherwise the price is derived from the current CoinRate.
+  priceMinor   Int?
+  fiatCurrency String   @default("AMD")
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders PaymentOrder[]
+}
+
+// ---------------------------------------------------------------- double-entry ledger
+
+enum AccountType {
+  USER_WALLET
+  SYSTEM_MINT
+  SYSTEM_PURCHASES
+  SYSTEM_FEES
+  MATCH_ESCROW
+  WITHDRAWAL_HOLD
+  SYSTEM_REDEEMED
+  SYSTEM_BURN
+}
+
+model LedgerAccount {
+  id            String        @id @default(uuid()) @db.Uuid
+  type          AccountType
+  currency      String
+  userId        String?       @db.Uuid
+  user          User?         @relation(fields: [userId], references: [id])
+  matchId       String?       @db.Uuid
+  /// Cached balance, updated only together with LedgerEntry inserts in the same DB transaction.
+  balance       BigInt        @default(0)
+  allowNegative Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  entries       LedgerEntry[]
+
+  @@unique([type, currency, userId, matchId])
+  @@index([userId])
+}
+
+enum LedgerTxType {
+  SIGNUP_BONUS
+  DAILY_BONUS
+  PURCHASE
+  PURCHASE_REFUND
+  STAKE
+  STAKE_REFUND
+  PAYOUT
+  FEE
+  ADMIN_CREDIT
+  ADMIN_DEBIT
+  WITHDRAWAL_HOLD
+  WITHDRAWAL_RELEASE
+  WITHDRAWAL_COMPLETE
+  /// daily quests, level and season rewards (practice chips)
+  REWARD
+  /// «Invite a friend» bonus
+  REFERRAL_BONUS
+}
+
+model LedgerTransaction {
+  id             String        @id @default(uuid()) @db.Uuid
+  type           LedgerTxType
+  currency       String
+  /// Unique business key — re-running the same operation returns the original transaction.
+  idempotencyKey String        @unique
+  description    String?
+  refType        String?
+  refId          String?
+  createdById    String?       @db.Uuid
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  entries        LedgerEntry[]
+
+  @@index([refType, refId])
+  @@index([createdAt])
+}
+
+model LedgerEntry {
+  id            BigInt            @id @default(autoincrement())
+  transactionId String            @db.Uuid
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id])
+  accountId     String            @db.Uuid
+  account       LedgerAccount     @relation(fields: [accountId], references: [id])
+  amount        BigInt
+  balanceAfter  BigInt
+  createdAt     DateTime          @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([transactionId])
+}
+
+// ---------------------------------------------------------------- payments
+
+enum OrderStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model PaymentOrder {
+  id              String       @id @default(uuid()) @db.Uuid
+  userId          String       @db.Uuid
+  user            User         @relation(fields: [userId], references: [id])
+  packageId       String?      @db.Uuid
+  package         CoinPackage? @relation(fields: [packageId], references: [id])
+  /// Snapshot at order time — later rate/package changes never alter this order.
+  coins           BigInt
+  bonusCoins      BigInt       @default(0)
+  amountMinor     Int
+  fiatCurrency    String
+  rateId          String?      @db.Uuid
+  coinsPerUnit    Decimal?     @db.Decimal(18, 6)
+  provider        String
+  providerRef     String?      @unique
+  checkoutUrl     String?
+  status          OrderStatus  @default(CREATED)
+  clientRequestId String
+  ledgerTxId      String?      @db.Uuid
+  receiptNumber   String?      @unique
+  failureReason   String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  paidAt          DateTime?
+  refundedAt      DateTime?
+  refunds         Refund[]
+
+  @@unique([userId, clientRequestId])
+  @@index([status, createdAt])
+}
+
+/// Every webhook received (valid or not). (provider, eventId) is unique => replay protection.
+model PaymentEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  provider       String
+  eventId        String
+  type           String
+  orderId        String?   @db.Uuid
+  signatureValid Boolean
+  payload        Json
+  processedAt    DateTime?
+  error          String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([provider, eventId])
+}
+
+enum RefundStatus {
+  REQUESTED
+  COMPLETED
+  FAILED
+}
+
+model Refund {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderId     String       @db.Uuid
+  order       PaymentOrder @relation(fields: [orderId], references: [id])
+  amountMinor Int
+  coins       BigInt
+  reason      String
+  status      RefundStatus @default(REQUESTED)
+  createdById String?      @db.Uuid
+  ledgerTxId  String?      @db.Uuid
+  createdAt   DateTime     @default(now())
+}
+
+// ---------------------------------------------------------------- withdrawals (disabled by default)
+
+enum WithdrawalStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  PROCESSING
+  COMPLETED
+}
+
+model WithdrawalRequest {
+  id              String                   @id @default(uuid()) @db.Uuid
+  userId          String                   @db.Uuid
+  user            User                     @relation(fields: [userId], references: [id])
+  coins           BigInt
+  fiatAmountMinor Int
+  fiatCurrency    String
+  coinsPerUnit    Decimal                  @db.Decimal(18, 6)
+  status          WithdrawalStatus         @default(PENDING_REVIEW)
+  holdTxId        String                   @db.Uuid
+  clientRequestId String
+  reviewerId      String?                  @db.Uuid
+  reviewNote      String?
+  payoutRef       String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  history         WithdrawalStatusChange[]
+
+  @@unique([userId, clientRequestId])
+  @@index([status])
+}
+
+model WithdrawalStatusChange {
+  id           BigInt            @id @default(autoincrement())
+  withdrawalId String            @db.Uuid
+  withdrawal   WithdrawalRequest @relation(fields: [withdrawalId], references: [id])
+  fromStatus   WithdrawalStatus?
+  toStatus     WithdrawalStatus
+  actorId      String?           @db.Uuid
+  note         String?
+  createdAt    DateTime          @default(now())
+}
+
+// ---------------------------------------------------------------- rooms & matches
+
+enum RoomStatus {
+  WAITING
+  READY
+  PLAYING
+  FINISHED
+  CANCELLED
+}
+
+model Room {
+  id        String       @id @default(uuid()) @db.Uuid
+  code      String       @unique
+  hostId    String       @db.Uuid
+  status    RoomStatus   @default(WAITING)
+  settings  Json
+  matchId   String?      @db.Uuid
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  members   RoomMember[]
+
+  @@index([status])
+}
+
+model RoomMember {
+  id       String   @id @default(uuid()) @db.Uuid
+  roomId   String   @db.Uuid
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId   String?  @db.Uuid
+  user     User?    @relation(fields: [userId], references: [id])
+  isBot    Boolean  @default(false)
+  botName  String?
+  seat     Int
+  ready    Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  @@unique([roomId, seat])
+  @@unique([roomId, userId])
+}
+
+enum MatchMode {
+  PRIVATE
+  RANDOM
+  PRACTICE
+  TOURNAMENT
+}
+
+enum MatchStatus {
+  ACTIVE
+  FINISHED
+  CANCELLED
+}
+
+model Match {
+  id           String        @id @default(uuid()) @db.Uuid
+  mode         MatchMode
+  status       MatchStatus   @default(ACTIVE)
+  roomId       String?       @db.Uuid
+  tournamentId String?       @db.Uuid
+  rules        Json
+  stake        BigInt        @default(0)
+  currency     String        @default("FUN")
+  ranked       Boolean       @default(false)
+  chatEnabled  Boolean       @default(true)
+  /// Full authoritative engine state (contains hidden hands) — never sent to clients.
+  state        Json
+  version      Int           @default(0)
+  scoreTeam0   Int           @default(0)
+  scoreTeam1   Int           @default(0)
+  winnerTeam   Int?
+  finishReason String?
+  /// SHA-256 over the final state + event log, stored when the match finishes.
+  resultHash   String?
+  startedAt    DateTime      @default(now())
+  finishedAt   DateTime?
+  durationSec  Int?
+  players      MatchPlayer[]
+  events       MatchEvent[]
+
+  @@index([status, startedAt])
+}
+
+model MatchPlayer {
+  id           String  @id @default(uuid()) @db.Uuid
+  matchId      String  @db.Uuid
+  match        Match   @relation(fields: [matchId], references: [id])
+  userId       String? @db.Uuid
+  user         User?   @relation(fields: [userId], references: [id])
+  isBot        Boolean @default(false)
+  botName      String?
+  seat         Int
+  team         Int
+  ratingBefore Int?
+  ratingAfter  Int?
+  result       String? // WIN | LOSS | ABANDON
+  xpGained     Int     @default(0)
+
+  @@unique([matchId, seat])
+  @@index([userId])
+}
+
+/// Append-only, ordered log of every game event (including private ones such as the dealt deck)
+/// used to replay and investigate matches.
+model MatchEvent {
+  id        BigInt   @id @default(autoincrement())
+  matchId   String   @db.Uuid
+  match     Match    @relation(fields: [matchId], references: [id])
+  seq       Int
+  type      String
+  seat      Int?
+  actorId   String?  @db.Uuid
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@unique([matchId, seq])
+}
+
+// ---------------------------------------------------------------- tournaments (architecture only)
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION
+  RUNNING
+  FINISHED
+  CANCELLED
+}
+
+model Tournament {
+  id        String            @id @default(uuid()) @db.Uuid
+  name      String
+  status    TournamentStatus  @default(DRAFT)
+  format    String            @default("single_elimination")
+  maxTeams  Int               @default(8)
+  entryFee  BigInt            @default(0)
+  currency  String            @default("FUN")
+  rules     Json
+  startsAt  DateTime?
+  createdAt DateTime          @default(now())
+  entries   TournamentEntry[]
+}
+
+model TournamentEntry {
+  id           String     @id @default(uuid()) @db.Uuid
+  tournamentId String     @db.Uuid
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  userId       String     @db.Uuid
+  partnerId    String?    @db.Uuid
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+}
+
+// ---------------------------------------------------------------- engagement
+
+model UserAchievement {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  code       String
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, code])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum TicketStatus {
+  OPEN
+  ANSWERED
+  CLOSED
+}
+
+model SupportTicket {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  user      User         @relation(fields: [userId], references: [id])
+  subject   String
+  message   String
+  status    TicketStatus @default(OPEN)
+  reply     String?
+  repliedBy String?      @db.Uuid
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// ---------------------------------------------------------------- audit & monitoring
+
+/// Immutable, hash-chained audit trail of every privileged action.
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @db.Uuid
+  actorRole  String?
+  action     String
+  targetType String?
+  targetId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  prevHash   String
+  hash       String   @unique
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+}
+
+model SuspiciousFlag {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String?   @db.Uuid
+  type         String
+  severity     String    @default("medium")
+  details      Json
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?   @db.Uuid
+  resolution   String?
+
+  @@index([resolvedAt])
+}
+
+model ErrorLog {
+  id        BigInt   @id @default(autoincrement())
+  level     String
+  message   String
+  context   String?
+  stack     String?
+  path      String?
+  userId    String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// A profile photo uploaded by the user (small JPEG/PNG/WebP, ≤ 256 KB). User.avatar is then
+/// "photo:<id>"; a new upload gets a new id so the image can be cached forever.
+model AvatarPhoto {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mime      String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+/// A player hid another one: no chat or quick phrases from them, never matched together.
+model UserBlock {
+  userId    String   @db.Uuid
+  user      User     @relation("blocker", fields: [userId], references: [id], onDelete: Cascade)
+  blockedId String   @db.Uuid
+  blocked   User     @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, blockedId])
+  @@index([blockedId])
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+/// One row per pair: who asked, who was asked, and whether it was accepted.
+model Friendship {
+  requesterId String           @db.Uuid
+  requester   User             @relation("requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String           @db.Uuid
+  addressee   User             @relation("addressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+
+  @@id([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+/// A browser/phone that agreed to receive notifications (Web Push).
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
