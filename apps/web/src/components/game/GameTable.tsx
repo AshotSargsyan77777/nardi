@@ -270,6 +270,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
               targets={targets}
               lastMoves={lastMoves}
               dice={dice}
+              rollKey={v.dice ? `${v.handNumber}:${v.turns[0] + v.turns[1]}` : null}
               onPick={onPick}
             />
             {myTurn && v.phase === 'roll' && (
