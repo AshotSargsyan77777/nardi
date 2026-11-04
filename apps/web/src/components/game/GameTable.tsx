@@ -263,6 +263,15 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
         {dto.mode === 'PRACTICE' && <span className="short:hidden"><Badge color="blue">{t('game.practice')}</Badge></span>}
         <div className="ml-auto flex items-center gap-1">
           {!connected && <Badge color="red">{t('game.reconnecting')}</Badge>}
+          {v.lastTurn && v.lastTurn.moves.length > 0 && !prefix.length && (
+            <button
+              onClick={() => (replay ? setReplay(null) : startReplay())}
+              title={t('game.replayLast')}
+              className={`whitespace-nowrap rounded-lg px-2 py-1.5 text-sm transition ${replay ? 'bg-gold-grad font-bold text-ink-950' : 'text-white/70 hover:bg-white/5'}`}
+            >
+              {replay ? `■ ${t('game.replayStop')}` : <>↺<span className="ml-1 hidden text-xs sm:inline">{t('game.replayLast')}</span></>}
+            </button>
+          )}
           <button onClick={() => setShowFair(true)} className="rounded-lg px-2 py-1.5 text-sm text-white/60 hover:bg-white/5" title={t('game.fairness')}>🛡️</button>
           <MusicButton className="rounded-lg px-2 py-1.5 text-sm text-white/60 hover:bg-white/5" />
           {!finished && !spectator && <button onClick={() => setShowEmotes((x) => !x)} aria-label="emotes" className="rounded-lg px-2 py-1.5 text-base hover:bg-white/5">😀</button>}
@@ -311,14 +320,6 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
                   🎲 {t('game.roll')}
                 </motion.button>
               </div>
-            )}
-            {v.lastTurn && v.lastTurn.moves.length > 0 && !prefix.length && (
-              <button
-                onClick={() => (replay ? setReplay(null) : startReplay())}
-                className={`absolute left-[3%] top-[3%] z-10 rounded-full px-2.5 py-1 text-[11px] font-bold shadow ring-1 transition ${replay ? 'bg-gold-grad text-ink-950 ring-gold-300' : 'bg-black/55 text-white/85 ring-white/15 hover:bg-black/70'}`}
-              >
-                {replay ? `■ ${t('game.replayStop')}` : `↺ ${t('game.replayLast')}`}
-              </button>
             )}
             <AnimatePresence>
               {toast && (
@@ -399,6 +400,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
           )}
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Link href="/"><Button variant="gold">{t('game.backHome')}</Button></Link>
+            {!spectator && <Link href={`/matches/${dto.matchId}/replay`}><Button>▶ {t('replay.watch')}</Button></Link>}
             {!spectator && <Link href={`/matches/${dto.matchId}`}><Button>{t('game.details')}</Button></Link>}
           </div>
         </div>
@@ -467,7 +469,7 @@ function PlayerMenu({ nickname, matchId, muted, onMute, onClose }: { nickname: s
 }
 
 /** Phones held upright: the board is drawn standing up so it can use the whole height. */
-function usePortraitPhone() {
+export function usePortraitPhone() {
   const [on, setOn] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia('(orientation: portrait) and (max-width: 700px)');

@@ -135,6 +135,24 @@ export class GameController {
     };
   }
 
+  /** Everything needed to replay a finished match move by move (participants only). */
+  @Get('matches/:id/replay')
+  async replay(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    const m = await this.prisma.match.findUnique({ where: { id }, include: { players: { include: { user: { select: { nickname: true, avatar: true } } } } } });
+    if (!m || !m.players.some((p) => p.userId === u.id)) throw new AppError('NOT_FOUND', 'Match not found', 404);
+    if (m.status === 'ACTIVE') throw new AppError('MATCH_ACTIVE', 'The match is still being played', 409);
+    const events = await this.prisma.matchEvent.findMany({
+      where: { matchId: id, type: { in: ['game_started', 'rolled', 'no_moves', 'moved', 'game_won', 'match_finished'] } },
+      orderBy: { seq: 'asc' },
+      select: { type: true, payload: true },
+    });
+    return {
+      id: m.id, rules: m.rules, scores: [m.scoreTeam0, m.scoreTeam1], winnerTeam: m.winnerTeam, finishReason: m.finishReason,
+      players: m.players.sort((a, b) => a.seat - b.seat).map((p) => ({ seat: p.seat, userId: p.userId, nickname: p.user?.nickname ?? p.botName, avatar: p.user?.avatar ?? 'bot', isBot: p.isBot })),
+      events: events.map((e) => ({ type: e.type, ...(e.payload as object) })),
+    };
+  }
+
   // ---------------------------------------------------------------- matchmaking (REST fallbacks; realtime goes through the socket)
   @Get('matchmaking/status')
   mmStatus(@CurrentUser() u: AuthUser) {

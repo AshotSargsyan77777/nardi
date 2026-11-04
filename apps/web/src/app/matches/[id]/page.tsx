@@ -21,7 +21,7 @@ export default function MatchDetailsPage() {
   const nameOf = (s: number) => m.players[s]?.nickname ?? `#${s}`;
   return (
     <div className="space-y-5">
-      <PageTitle sub={`${t(`history.mode.${m.mode}`)} · ${fmtDate(m.startedAt, locale)} · ${fmtDuration(m.durationSec)}`} action={m.status === 'ACTIVE' ? <Link href={`/match/${m.id}`}><Button variant="gold">{t('home.resume')}</Button></Link> : undefined}>
+      <PageTitle sub={`${t(`history.mode.${m.mode}`)} · ${fmtDate(m.startedAt, locale)} · ${fmtDuration(m.durationSec)}`} action={m.status === 'ACTIVE' ? <Link href={`/match/${m.id}`}><Button variant="gold">{t('home.resume')}</Button></Link> : <Link href={`/matches/${m.id}/replay`}><Button variant="gold">▶ {t('replay.watch')}</Button></Link>}>
         {t('game.details')}
       </PageTitle>
       <Panel>
