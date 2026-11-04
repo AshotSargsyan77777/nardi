@@ -534,7 +534,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         where: { id: user.id },
         data: { gamesPlayed: { increment: 1 }, wins: { increment: won ? 1 : 0 }, losses: { increment: won ? 0 : 1 }, xp, level: levelForXp(xp), rating },
       });
-      await this.referrals.onGameFinished(tx, user.id, user.gamesPlayed + 1);
+      // walking out of a match does not count towards the invite bonus
+      if (won || s.finishReason !== 'forfeit') await this.referrals.onGameFinished(tx, user.id, user.gamesPlayed + 1);
       // a reward for every new level: level × 100 practice chips
       for (let lvl = user.level + 1; lvl <= levelForXp(xp); lvl++) {
         const amount = BigInt(lvl * 100);

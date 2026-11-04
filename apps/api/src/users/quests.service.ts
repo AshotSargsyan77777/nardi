@@ -73,18 +73,24 @@ export class QuestsService {
   }
 
   private async progress(userId: string, since: Date): Promise<Progress> {
-    const seats = await this.prisma.matchPlayer.findMany({
+    const all = await this.prisma.matchPlayer.findMany({
       where: { userId, match: { status: 'FINISHED', finishedAt: { gte: since } } },
-      select: { matchId: true, seat: true, result: true, match: { select: { mode: true, rules: true } } },
+      select: { matchId: true, seat: true, result: true, match: { select: { mode: true, rules: true, finishReason: true } } },
     });
+    // A match someone walked out of (left, or timed out until they lost) is not a played match:
+    // it counts for nothing for the one who left; the one who stayed keeps what happened in the
+    // games actually played (rolls, games won, mars) but not «played / won a match».
+    const forfeited = (s: (typeof all)[number]) => s.match.finishReason === 'forfeit';
+    const seatsPlayed = all.filter((s) => !forfeited(s) || s.result === 'WIN');
+    const seats = all.filter((s) => !forfeited(s));
     const p: Progress = {
       play: seats.length, win: seats.filter((s) => s.result === 'WIN').length,
       friends: seats.filter((s) => s.match.mode === 'PRIVATE').length, random: seats.filter((s) => s.match.mode === 'RANDOM').length,
       short: seats.filter((s) => (s.match.rules as any)?.variant !== 'long').length, long: seats.filter((s) => (s.match.rules as any)?.variant === 'long').length,
       games: 0, gameWins: 0, mars: 0, doubles: 0, sheshBesh: 0,
     };
-    if (!seats.length) return p;
-    const seatOf = new Map(seats.map((s) => [s.matchId, s.seat]));
+    if (!seatsPlayed.length) return p;
+    const seatOf = new Map(seatsPlayed.map((s) => [s.matchId, s.seat]));
     const events = await this.prisma.matchEvent.findMany({ where: { matchId: { in: [...seatOf.keys()] }, type: { in: ['game_won', 'rolled'] } }, select: { matchId: true, type: true, payload: true } });
     for (const e of events) {
       const seat = seatOf.get(e.matchId)!;

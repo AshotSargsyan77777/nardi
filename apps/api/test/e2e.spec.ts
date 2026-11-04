@@ -1,3 +1,4 @@
+import { QuestsService } from '../src/users/quests.service';
 import { INestApplication } from '@nestjs/common';
 import { MatchDTO } from '@nardi/engine';
 import { randomUUID } from 'crypto';
@@ -290,6 +291,12 @@ describe('NARDI API end-to-end', () => {
       expect(leave.ok).toBe(true);
       await sleep(200);
       expect((await prismaOf(app).match.findUniqueOrThrow({ where: { id: ids[0] } })).status).toBe('FINISHED');
+      // a match someone walked out of does not count towards quests, for either player
+      const quests = app.get(QuestsService) as any;
+      for (const u of users) {
+        const p = await quests.progress(u.id, new Date(0));
+        expect([p.play, p.win, p.random, p.long]).toEqual([0, 0, 0, 0]);
+      }
       sockets.forEach((s) => s.close());
     });
   });
