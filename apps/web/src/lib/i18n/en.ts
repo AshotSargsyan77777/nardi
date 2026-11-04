@@ -572,6 +572,8 @@ export const en: Dict = {
   'game.roll': "Roll",
   'game.rolled': "Rolled",
   'game.done': "Done",
+  'game.replayLast': "Last move",
+  'game.replayStop': "Stop",
   'game.undo': "Undo",
   'game.yourMove': "Your move",
   'game.noMoves': "No move — the turn passes",

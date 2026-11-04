@@ -185,3 +185,27 @@ describe('whole games', () => {
     expect(normalizeRules({}).variant).toBe('short');
   });
 });
+
+describe('unapplySteps', () => {
+  it('restores the board before every turn of random matches', async () => {
+    const { createMatch, applyAction, nextMoveOptions } = await import('../src/game');
+    const { botAction } = await import('../src/bot');
+    const { unapplySteps } = await import('../src/board');
+    for (const variant of ['short', 'long'] as const) {
+      let s = createMatch({ variant, targetScore: 3 }, 0);
+      for (let i = 0; i < 400 && s.status === 'playing'; i++) {
+        const seat = s.game!.turn as 0 | 1;
+        const before = JSON.parse(JSON.stringify(s.game!.board));
+        const gameNo = s.game!.number;
+        let act = botAction(s, seat);
+        if (act.type === 'roll') act = { type: 'roll', dice: [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)] };
+        const res = applyAction(s, seat, act);
+        s = res.state;
+        if (act.type === 'move' && s.game && s.game.number === gameNo && s.game.lastTurn && !res.events.some((e) => e.type === 'game_won')) {
+          expect(unapplySteps(s.game.board, variant, seat, s.game.lastTurn.moves)).toEqual(before);
+        }
+        void nextMoveOptions;
+      }
+    }
+  });
+});

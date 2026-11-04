@@ -571,6 +571,8 @@ export const hy = {
   'game.roll': "Գցել զառերը",
   'game.rolled': "Գցված զառեր",
   'game.done': "Պատրաստ ա",
+  'game.replayLast': "Վերջին քայլը",
+  'game.replayStop': "Կանգնեցնել",
   'game.undo': "Հետ",
   'game.yourMove': "Քո քայլն ա",
   'game.noMoves': "Քայլ չկա, հերթն անցավ",

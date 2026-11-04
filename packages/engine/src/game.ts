@@ -1,4 +1,4 @@
-import { Board, Move, Seat, Team, TurnCtx, absIndex, CHECKERS, legalSequences, otherSeat, pips, playTurn, startBoard, stepOptions } from './board';
+import { Board, Move, Seat, Team, TurnCtx, absIndex, CHECKERS, legalSequences, otherSeat, pips, playTurn, startBoard, stepOptions, withHits } from './board';
 import { RuleConfig, normalizeRules } from './rules';
 
 /** One game (a match is played to several points). */
@@ -119,7 +119,7 @@ export function applyAction(prev: MatchState, seat: Seat, action: Action): { sta
     const after = playTurn(g.board, turnCtx(state), g.dice, action.moves);
     if (!after) throw new EngineError('ILLEGAL_MOVE');
     const hits = action.moves.filter((m) => m.to !== 'off' && prev.game!.board.points[m.to as number] !== 0 && Math.sign(prev.game!.board.points[m.to as number]) !== (seat === 0 ? 1 : -1)).length;
-    const moves = action.moves.map((m) => ({ from: m.from, to: m.to, die: m.die }));
+    const moves = withHits(prev.game!.board, state.config.variant, seat, action.moves);
     g.board = after;
     events.push({ type: 'moved', seat, moves, hits });
     if (after.off[seat] === CHECKERS) {

@@ -282,3 +282,29 @@ export function applySteps(b: Board, variant: Variant, seat: Seat, moves: Move[]
   }
   return nb;
 }
+
+/** The board before the given steps were played (to replay a turn). Inverse of `applySteps`. */
+export function unapplySteps(b: Board, variant: Variant, seat: Seat, moves: Move[]): Board {
+  const nb = cloneBoard(b);
+  const o = otherSeat(seat);
+  for (const m of [...moves].reverse()) {
+    if (m.to === 'off') nb.off[seat] -= 1;
+    else {
+      place(nb, seat, m.to, -1);
+      if (variant === 'short' && m.hit) { nb.bar[o] -= 1; place(nb, o, m.to, 1); }
+    }
+    if (m.from === 'bar') nb.bar[seat] += 1;
+    else place(nb, seat, m.from, 1);
+  }
+  return nb;
+}
+
+/** The same steps with `hit` set where an opponent checker was hit (short nardi). */
+export function withHits(b: Board, variant: Variant, seat: Seat, moves: Move[]): Move[] {
+  let cur = b;
+  return moves.map((m) => {
+    const hit = variant === 'short' && m.to !== 'off' && opp(cur, seat, m.to) === 1;
+    cur = applySteps(cur, variant, seat, [m]);
+    return { from: m.from, to: m.to, die: m.die, ...(hit ? { hit: true } : {}) };
+  });
+}

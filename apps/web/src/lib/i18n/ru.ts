@@ -572,6 +572,8 @@ export const ru: Dict = {
   'game.roll': "Бросить кости",
   'game.rolled': "Выпавшие кости",
   'game.done': "Готово",
+  'game.replayLast': "Последний ход",
+  'game.replayStop': "Стоп",
   'game.undo': "Назад",
   'game.yourMove': "Твой ход",
   'game.noMoves': "Хода нет, очередь переходит",

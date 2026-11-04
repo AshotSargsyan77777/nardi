@@ -1,5 +1,6 @@
 'use client';
-import { Action, GameEvent, GameResult, MatchDTO, Move, Seat, SeatInfo, diceMoves, remainingDice, viewBoardAfter, viewMoveOptions } from '@nardi/engine';
+import { Action, GameEvent, GameResult, MatchDTO, Move, Seat, SeatInfo, applySteps, diceMoves, remainingDice, unapplySteps, viewBoardAfter, viewMoveOptions } from '@nardi/engine';
+import type { Board as BoardState } from '@nardi/engine';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -91,6 +92,8 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
 
   const [prefix, setPrefix] = useState<Move[]>([]);
   const [selected, setSelected] = useState<number | 'bar' | null>(null);
+  // replay of the last turn: the boards before and after each of its steps
+  const [replay, setReplay] = useState<{ boards: BoardState[]; idx: number; dice: [number, number]; moves: Move[] } | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
@@ -143,8 +146,29 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
     }
     setPrefix([]);
     setSelected(null);
+    setReplay(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v.version]);
+  const startReplay = () => {
+    const lt = v.lastTurn;
+    if (!lt || !lt.moves.length) return;
+    const variant = v.config.variant;
+    const before = unapplySteps(v.board, variant, lt.seat, lt.moves);
+    const boards = [before];
+    lt.moves.forEach((m, i) => boards.push(applySteps(boards[i], variant, lt.seat, [m])));
+    setSelected(null);
+    setReplay({ boards, idx: 0, dice: lt.dice, moves: lt.moves });
+  };
+  useEffect(() => {
+    if (!replay) return;
+    const last = replay.idx >= replay.boards.length - 1;
+    const id = setTimeout(() => {
+      if (last) return setReplay(null);
+      setReplay((r) => (r ? { ...r, idx: r.idx + 1 } : r));
+      sound()?.checker();
+    }, last ? 1200 : replay.idx === 0 ? 900 : 750);
+    return () => clearTimeout(id);
+  }, [replay]);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(null), 2400);
@@ -171,7 +195,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
     sound()?.checker();
   };
   const onPick = (w: number | 'bar' | 'off') => {
-    if (!myMove || busy || complete) return;
+    if (!myMove || busy || complete || replay) return;
     if (selected !== null && w !== 'bar' && targets.includes(w)) {
       // two dice may lead to the same place (bearing off): use the smaller one
       const opts = options.filter((o) => o.from === selected && o.to === w).sort((a, b) => a.die - b.die);
@@ -263,14 +287,14 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
         <div className="relative flex min-h-0 flex-1 items-center justify-center px-1">
           <div className={`relative max-h-full w-full ${vertical ? 'aspect-[720/1000] max-w-[min(100%,72vh)]' : 'aspect-[1000/720] max-w-[1100px]'}`}>
             <NardiBoard
-              board={shownBoard}
+              board={replay ? replay.boards[replay.idx] : shownBoard}
               variant={v.config.variant}
               viewer={mySeat}
-              sources={myMove && !complete ? sources : []}
-              selected={selected}
-              targets={targets}
-              lastMoves={lastMoves}
-              dice={dice}
+              sources={myMove && !complete && !replay ? sources : []}
+              selected={replay ? null : selected}
+              targets={replay ? [] : targets}
+              lastMoves={replay ? [] : lastMoves}
+              dice={replay ? replayDice(replay.dice, replay.moves.slice(0, replay.idx)) : dice}
               vertical={vertical}
               rollKey={v.dice ? `${v.handNumber}:${v.turns[0] + v.turns[1]}` : null}
               onPick={onPick}
@@ -287,6 +311,14 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
                   🎲 {t('game.roll')}
                 </motion.button>
               </div>
+            )}
+            {v.lastTurn && v.lastTurn.moves.length > 0 && !prefix.length && (
+              <button
+                onClick={() => (replay ? setReplay(null) : startReplay())}
+                className={`absolute left-[3%] top-[3%] z-10 rounded-full px-2.5 py-1 text-[11px] font-bold shadow ring-1 transition ${replay ? 'bg-gold-grad text-ink-950 ring-gold-300' : 'bg-black/55 text-white/85 ring-white/15 hover:bg-black/70'}`}
+              >
+                {replay ? `■ ${t('game.replayStop')}` : `↺ ${t('game.replayLast')}`}
+              </button>
             )}
             <AnimatePresence>
               {toast && (
@@ -445,4 +477,15 @@ function usePortraitPhone() {
     return () => mq.removeEventListener('change', update);
   }, []);
   return on;
+}
+
+/** The dice of a replayed turn, with the ones already played dimmed. */
+function replayDice(d: [number, number], played: Move[]) {
+  const all = d[0] === d[1] ? [d[0], d[0], d[0], d[0]] : [d[0], d[1]];
+  const left = played.map((m) => m.die);
+  return all.map((value) => {
+    const i = left.indexOf(value);
+    if (i >= 0) { left.splice(i, 1); return { value, used: true }; }
+    return { value, used: false };
+  });
 }
