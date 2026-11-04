@@ -1,3 +1,5 @@
+import { TournamentsService } from '../src/game/tournaments.service';
+import { viewMoveOptions } from '@nardi/engine';
 import { MailService } from '../src/common/mail.service';
 import { QuestsService } from '../src/users/quests.service';
 import { INestApplication } from '@nestjs/common';
@@ -268,6 +270,59 @@ describe('NARDI API end-to-end', () => {
       expect((await ledger.verify()).ok).toBe(true);
       sockets.forEach((s) => s.close());
     });
+  });
+
+  describe('tournaments', () => {
+    it('runs a knock-out with a bye and pays the top three', async () => {
+      const tours = app.get(TournamentsService);
+      const users = await Promise.all([0, 1, 2].map(() => registerUser(app)));
+      const t = await tours.create({ name: 'Test cup', variant: 'short', targetScore: 1, maxPlayers: 4, prizes: [500, 200, 100], startsAt: new Date(Date.now() + 3600_000), minPlayers: 2 });
+      for (const u of users) expect((await post(u, `/api/tournaments/${t.id}/join`)).status).toBe(200);
+      const list = (await users[0].agent.get('/api/tournaments')).body;
+      expect(list.open.find((x: any) => x.id === t.id)).toMatchObject({ players: 3, joined: true });
+      // every player keeps playing whatever match they are in
+      const sockets = await Promise.all(users.map(connect));
+      sockets.forEach((s, k) => {
+        // like the web client: a started match is opened right away
+        s.on('match:started', async ({ matchId }: { matchId: string }) => {
+          const d = (await users[k].agent.get(`/api/matches/${matchId}/state`)).body;
+          s.listeners('match:state').forEach((fn) => fn(d));
+        });
+        s.on('match:state', (d: MatchDTO) => {
+          const v = d.view;
+          if (process.env.DEBUG_T) console.log('STATE', k, v.version, v.phase, v.turn, v.seat, v.status);
+          if (v.status !== 'playing' || v.seat === null || v.turn !== v.seat) return;
+          let action: any = { type: 'roll' };
+          if (v.phase === 'move') {
+            const moves: any[] = [];
+            while (moves.length < v.movesRequired) moves.push(viewMoveOptions(v, moves)[0]);
+            action = { type: 'move', moves };
+          }
+          s.emitWithAck('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action }).then((r: any) => { if (process.env.DEBUG_T && r?.error) console.log('ACK', k, JSON.stringify(r).slice(0, 200)); });
+        });
+      });
+      await tours.start(t.id);
+      let done: any = null;
+      for (let i = 0; i < 560 && !done; i++) {
+        await sleep(500);
+        const row = await prismaOf(app).tournament.findUniqueOrThrow({ where: { id: t.id } });
+        if (row.status === 'FINISHED') done = row;
+      }
+      expect(done).not.toBeNull();
+      const view = (await users[0].agent.get(`/api/tournaments/${t.id}`)).body;
+      expect(view.bracket).toHaveLength(2);
+      const places = view.players.map((p: any) => p.place).sort();
+      expect(places).toEqual([1, 2, 3]);
+      const ledger = app.get(LedgerService);
+      for (const p of view.players) {
+        const u = users.find((x) => x.id === p.userId)!;
+        const prize = [500, 200, 100][p.place - 1];
+        expect(Number(await ledger.balance(u.id, 'FUN'))).toBe(10000 + prize);
+      }
+      expect(done.winnerId).toBe(view.players.find((p: any) => p.place === 1).userId);
+      expect((await ledger.verify()).ok).toBe(true);
+      sockets.forEach((s) => s.close());
+    }, 320_000);
   });
 
   describe('password reset', () => {

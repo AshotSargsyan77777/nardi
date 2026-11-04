@@ -1,0 +1,10 @@
+ALTER TABLE "Tournament" ADD COLUMN "prizes" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "Tournament" ADD COLUMN "bracket" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "Tournament" ADD COLUMN "round" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Tournament" ADD COLUMN "minPlayers" INTEGER NOT NULL DEFAULT 4;
+ALTER TABLE "Tournament" ADD COLUMN "auto" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Tournament" ADD COLUMN "winnerId" UUID;
+ALTER TABLE "Tournament" ADD COLUMN "finishedAt" TIMESTAMP(3);
+ALTER TABLE "TournamentEntry" ADD COLUMN "place" INTEGER;
+CREATE INDEX "Tournament_status_startsAt_idx" ON "Tournament"("status", "startsAt");
+CREATE INDEX "Match_tournamentId_idx" ON "Match"("tournamentId");

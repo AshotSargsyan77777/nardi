@@ -60,6 +60,7 @@ export interface CreateMatchInput {
   ranked: boolean;
   chatEnabled: boolean;
   roomId?: string | null;
+  tournamentId?: string | null;
   /** Exactly two seats, in seat order. */
   seats: ({ userId: string } | { botName: string })[];
 }
@@ -137,7 +138,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     await this.prisma.$transaction(async (tx) => {
       await tx.match.create({
         data: {
-          id: matchId, mode: input.mode, roomId: input.roomId ?? null, rules: rules as any, stake, currency: input.currency, ranked: input.ranked,
+          id: matchId, mode: input.mode, roomId: input.roomId ?? null, tournamentId: input.tournamentId ?? null, rules: rules as any, stake, currency: input.currency, ranked: input.ranked,
           chatEnabled: input.chatEnabled, state: persisted as any, version: engine.version,
         },
       });

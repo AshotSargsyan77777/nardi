@@ -51,6 +51,8 @@ export interface GameSettings {
   emotes: Emotes;
   /** Words hidden in chat and refused in nicknames (any case, with spaces or look-alike letters). */
   chatFilter: string[];
+  /** The daily knock-out tournament (when features.tournamentsEnabled). Variants alternate by day. */
+  tournaments: { daily: boolean; hour: number; maxPlayers: number; targetScore: number; prizes: number[] };
 }
 
 export interface EmotePhrase { id: string; group: 'play' | 'general'; hy: string; ru: string; en: string }
@@ -90,7 +92,7 @@ export const DEFAULT_SETTINGS: SettingsShape = {
     blotStakesEnabled: false,
     funStakesEnabled: true,
     withdrawalsEnabled: false,
-    tournamentsEnabled: false,
+    tournamentsEnabled: true,
     practiceBotsEnabled: true,
     fillCasualWithBotsAfterSec: 0,
     registrationOpen: true,
@@ -110,6 +112,7 @@ export const DEFAULT_SETTINGS: SettingsShape = {
     hostEditableRules: ['variant', 'targetScore', 'turnTimeoutSec', 'marsEnabled', 'botLevel'],
     emotes: structuredClone(DEFAULT_EMOTES),
     chatFilter: [...DEFAULT_CHAT_FILTER],
+    tournaments: { daily: true, hour: 20, maxPlayers: 16, targetScore: 3, prizes: [5000, 2500, 1000] },
   },
   legal: { minAge: 18, termsVersion: '1.0', supportEmail: 'support@example.com' },
 };
@@ -142,6 +145,7 @@ export class SettingsService implements OnModuleInit {
     next.game.hostEditableRules = next.game.hostEditableRules.filter((k) => k in DEFAULT_RULES);
     if (!next.game.emotes?.phrases) next.game.emotes = structuredClone(DEFAULT_EMOTES);
     if (!Array.isArray(next.game.chatFilter)) next.game.chatFilter = [...DEFAULT_CHAT_FILTER];
+    next.game.tournaments = { ...DEFAULT_SETTINGS.game.tournaments, ...(next.game.tournaments ?? {}) };
     this.cache = next;
     this.loadedAt = Date.now();
   }
@@ -223,6 +227,15 @@ export class SettingsService implements OnModuleInit {
         for (const c of ['FUN', 'BLOT']) {
           if (!Array.isArray(merged.stakeOptions?.[c])) throw new AppError('BAD_SETTING', `stakeOptions.${c} must be an array`);
           merged.stakeOptions[c].forEach((n: any) => nonNeg(n, `stakeOptions.${c}`));
+        }
+        {
+          const t = (merged.tournaments = { ...DEFAULT_SETTINGS.game.tournaments, ...(merged.tournaments ?? {}) });
+          if (typeof t.daily !== 'boolean') throw new AppError('BAD_SETTING', 'tournaments.daily: true | false');
+          if (!Number.isInteger(t.hour) || t.hour < 0 || t.hour > 23) throw new AppError('BAD_SETTING', 'tournaments.hour: 0..23 (Yerevan time)');
+          if (![4, 8, 16, 32].includes(t.maxPlayers)) throw new AppError('BAD_SETTING', 'tournaments.maxPlayers: 4, 8, 16 or 32');
+          if (!RULE_LIMITS.targetScore.includes(t.targetScore)) throw new AppError('BAD_SETTING', 'tournaments.targetScore: 1, 3, 5 or 7');
+          if (!Array.isArray(t.prizes) || t.prizes.length > 3) throw new AppError('BAD_SETTING', 'tournaments.prizes: up to 3 amounts');
+          t.prizes.forEach((n: any) => nonNeg(n, 'tournaments.prizes'));
         }
         break;
       case 'legal':

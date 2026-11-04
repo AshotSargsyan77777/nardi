@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import webpush from 'web-push';
 import { PrismaService } from './prisma.service';
 
-type Kind = 'turn' | 'invite' | 'friendRequest' | 'friendAccepted' | 'matchFound';
+type Kind = 'turn' | 'invite' | 'friendRequest' | 'friendAccepted' | 'matchFound' | 'tournamentMatch' | 'tournamentStart';
 const TEXT: Record<string, Record<Kind, (x: string) => { title: string; body: string }>> = {
   hy: {
     turn: () => ({ title: 'Քո հերթն է', body: 'Սեղանի մոտ քեզ են սպասում' }),
@@ -10,6 +10,8 @@ const TEXT: Record<string, Record<Kind, (x: string) => { title: string; body: st
     friendRequest: (x) => ({ title: 'Ընկերության հայտ', body: `${x}-ը ուզում է ընկեր լինել` }),
     friendAccepted: (x) => ({ title: 'Նոր ընկեր', body: `${x}-ն ընդունեց հայտդ` }),
     matchFound: () => ({ title: 'Խաղը գտնվեց', body: 'Արագ հաստատիր, որ սկսենք' }),
+    tournamentMatch: (x) => ({ title: 'Մրցաշար', body: `Քո խաղը ${x}-ի դեմ սկսվեց` }),
+    tournamentStart: () => ({ title: 'Մրցաշարը սկսվում է', body: 'Մտիր կայք, քո առաջին խաղը հիմա կլինի' }),
   },
   ru: {
     turn: () => ({ title: 'Ваш ход', body: 'Вас ждут за столом' }),
@@ -17,6 +19,8 @@ const TEXT: Record<string, Record<Kind, (x: string) => { title: string; body: st
     friendRequest: (x) => ({ title: 'Заявка в друзья', body: `${x} хочет дружить` }),
     friendAccepted: (x) => ({ title: 'Новый друг', body: `${x} принял(а) заявку` }),
     matchFound: () => ({ title: 'Игра найдена', body: 'Подтвердите, чтобы начать' }),
+    tournamentMatch: (x) => ({ title: 'Турнир', body: `Ваша игра против ${x} началась` }),
+    tournamentStart: () => ({ title: 'Турнир начинается', body: 'Заходите — ваша первая игра сейчас' }),
   },
   en: {
     turn: () => ({ title: 'Your turn', body: 'They are waiting for you at the table' }),
@@ -24,6 +28,8 @@ const TEXT: Record<string, Record<Kind, (x: string) => { title: string; body: st
     friendRequest: (x) => ({ title: 'Friend request', body: `${x} wants to be friends` }),
     friendAccepted: (x) => ({ title: 'New friend', body: `${x} accepted your request` }),
     matchFound: () => ({ title: 'Game found', body: 'Confirm quickly to start' }),
+    tournamentMatch: (x) => ({ title: 'Tournament', body: `Your match against ${x} has started` }),
+    tournamentStart: () => ({ title: 'Tournament starting', body: 'Come in — your first match is now' }),
   },
 };
 

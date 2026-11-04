@@ -450,6 +450,7 @@ model Match {
   events       MatchEvent[]
 
   @@index([status, startedAt])
+  @@index([tournamentId])
 }
 
 model MatchPlayer {
@@ -487,7 +488,7 @@ model MatchEvent {
   @@unique([matchId, seq])
 }
 
-// ---------------------------------------------------------------- tournaments (architecture only)
+// ---------------------------------------------------------------- tournaments (knock-out, free entry, FC prizes)
 
 enum TournamentStatus {
   DRAFT
@@ -508,7 +509,19 @@ model Tournament {
   rules     Json
   startsAt  DateTime?
   createdAt DateTime          @default(now())
+  /// FC for 1st, 2nd, 3rd (both semi-final losers) places.
+  prizes     Json             @default("[]")
+  /// Rounds of pairs: [{ a, b, matchId, winner }] (null player = bye).
+  bracket    Json             @default("[]")
+  round      Int              @default(0)
+  minPlayers Int              @default(4)
+  /// Created by the daily schedule (not by an admin).
+  auto       Boolean          @default(false)
+  winnerId   String?          @db.Uuid
+  finishedAt DateTime?
   entries   TournamentEntry[]
+
+  @@index([status, startsAt])
 }
 
 model TournamentEntry {
@@ -518,6 +531,8 @@ model TournamentEntry {
   userId       String     @db.Uuid
   partnerId    String?    @db.Uuid
   createdAt    DateTime   @default(now())
+  /// Final place (1, 2, 3) or the round the player went out in (as a negative number).
+  place        Int?
 
   @@unique([tournamentId, userId])
 }
