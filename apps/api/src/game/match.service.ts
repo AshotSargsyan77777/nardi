@@ -445,7 +445,10 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const player = rt.players[turn];
     const version = rt.engine.version;
     if (player.isBot) {
-      rt.timer = setTimeout(() => this.timed(rt, version, 'bot'), this.env.botDelayMs + randomInt(400));
+      // roll after a short pause; then leave time to see the dice before the checkers move
+      const base = this.env.botDelayMs;
+      const ms = rt.engine.game?.phase === 'move' ? Math.round(base * 2.2) + randomInt(Math.max(1, Math.round(base * 0.8))) : base + randomInt(Math.max(1, Math.round(base * 0.6)));
+      rt.timer = setTimeout(() => this.timed(rt, version, 'bot'), ms);
       return;
     }
     // the player is away (app closed / phone locked): tell their phone it is their turn

@@ -36,6 +36,8 @@ function place(rel: number): { col: number; top: boolean } {
 const colX = (col: number) => X0 + (col < 6 ? col * W : HALF + BAR_W + (col - 6) * W) + W / 2;
 
 type Loc = number | 'bar' | 'off';
+/** Seconds between the checkers of one turn when they move together (the opponent's whole turn). */
+export const MOVE_STAGGER = 0.4;
 
 export interface BoardProps {
   board: BoardState;
@@ -231,7 +233,7 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
             key={id}
             initial={false}
             animate={{ x: p.x, y: p.y, scaleX: inTray ? 0.82 : 1, scaleY: inTray ? 0.3 : 1 }}
-            transition={{ duration: moving !== undefined ? 0.48 : 0.25, delay: moving !== undefined ? moving * 0.16 : 0, ease: [0.25, 0.8, 0.3, 1] }}
+            transition={{ duration: moving !== undefined ? 0.55 : 0.25, delay: moving !== undefined ? moving * MOVE_STAGGER : 0, ease: [0.25, 0.8, 0.3, 1] }}
             style={{ pointerEvents: 'none' }}
           >
             <Checker seat={s.seat} glow={glow} chosen={chosen} />

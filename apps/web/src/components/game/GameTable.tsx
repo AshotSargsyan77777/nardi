@@ -13,7 +13,7 @@ import { Chat } from '../Chat';
 import { PlayerActions } from '../PlayerActions';
 import { MusicButton } from '../Sound';
 import { Badge, Button, Coins, Modal } from '../ui';
-import { NardiBoard } from './Board';
+import { MOVE_STAGGER, NardiBoard } from './Board';
 import { Coach, TipId } from './Coach';
 import { Confetti } from './Confetti';
 import { EmotePanel, useEmoteText } from './EmotePanel';
@@ -137,7 +137,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
     seenVersion.current = v.version;
     for (const e of dto.events as GameEvent[]) {
       if (e.type === 'rolled') sound()?.dice();
-      if (e.type === 'moved' && e.seat !== mySeat) e.moves.forEach((_, i) => setTimeout(() => sound()?.checker(), i * 120));
+      if (e.type === 'moved' && e.seat !== mySeat) e.moves.forEach((_, i) => setTimeout(() => sound()?.checker(), 450 + i * MOVE_STAGGER * 1000));
       if (e.type === 'no_moves') setToast(e.seat === mySeat && !spectator ? t('game.noMoves') : t('game.oppNoMoves', { name: nameOf(e.seat) }));
       if (e.type === 'game_won') setTimeout(() => setGameResult(e.result), 500);
     }
