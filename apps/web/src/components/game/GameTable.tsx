@@ -1,5 +1,5 @@
 'use client';
-import { Action, GameEvent, GameResult, MatchDTO, Move, Seat, SeatInfo, applySteps, diceMoves, remainingDice, unapplySteps, viewBoardAfter, viewMoveOptions } from '@nardi/engine';
+import { Action, GameEvent, GameResult, MatchDTO, Move, Seat, SeatInfo, applySteps, diceMoves, remainingDice, unapplySteps, viewBoardAfter, viewHint, viewMoveOptions } from '@nardi/engine';
 import type { Board as BoardState } from '@nardi/engine';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
@@ -195,7 +195,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
     sound()?.checker();
   };
   const onPick = (w: number | 'bar' | 'off') => {
-    if (!myMove || busy || complete || replay) return;
+    if (!myMove || busy || complete || replay || hinting) return;
     if (selected !== null && w !== 'bar' && targets.includes(w)) {
       // two dice may lead to the same place (bearing off): use the smaller one
       const opts = options.filter((o) => o.from === selected && o.to === w).sort((a, b) => a.die - b.die);
@@ -213,6 +213,24 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
     setSelected(null);
   };
   const submit = () => onAction({ type: 'move', moves: prefix });
+  // practice only: the strongest bot shows its move, step by step; the player can undo or confirm
+  const hintRun = useRef(0);
+  const [hinting, setHinting] = useState(false);
+  const showHint = () => {
+    const seq = viewHint(v);
+    if (!seq.length) return;
+    const run = ++hintRun.current;
+    setSelected(null);
+    setPrefix([]);
+    setHinting(true);
+    seq.forEach((_, k) => setTimeout(() => {
+      if (hintRun.current !== run) return;
+      setPrefix(seq.slice(0, k + 1));
+      sound()?.checker();
+      if (k === seq.length - 1) setHinting(false);
+    }, 500 + k * 650));
+  };
+  useEffect(() => { hintRun.current += 1; setHinting(false); }, [v.version]);
   const undo = () => { setPrefix((p) => p.slice(0, -1)); setSelected(null); };
 
   // dice on the board: mine with the used ones dimmed; the opponent's while they move; else the last roll
@@ -237,7 +255,8 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
   const controls = (
     <div className="flex flex-wrap items-center gap-2">
       {actionError && <span className="text-xs text-ruby-400">{actionError}</span>}
-      {myMove && prefix.length > 0 && <Button size="sm" onClick={undo} disabled={busy}>↶ {t('game.undo')}</Button>}
+      {myMove && dto.mode === 'PRACTICE' && !spectator && <Button size="sm" onClick={showHint} disabled={busy || hinting}>💡 {t('game.hint')}</Button>}
+      {myMove && prefix.length > 0 && <Button size="sm" onClick={undo} disabled={busy || hinting}>↶ {t('game.undo')}</Button>}
       {complete && <Button variant="gold" onClick={submit} loading={busy}>✓ {t('game.done')}</Button>}
       {!myTurn && !finished && v.turn !== null && <span className="text-xs text-white/50">{t('game.waitingFor', { name: nameOf(v.turn) })}</span>}
       {myMove && !complete && <span className="rounded-full bg-gold-400/15 px-3 py-1 text-xs font-bold text-gold-200">{t('game.yourMove')}</span>}

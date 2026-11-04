@@ -588,6 +588,7 @@ export const hy = {
   'replay.hit': "խփեց",
   'replay.off': "հանեց",
   'replay.bar': "բար",
+  'game.hint': "Հուշում",
   'game.undo': "Հետ",
   'game.yourMove': "Քո քայլն ա",
   'game.noMoves': "Քայլ չկա, հերթն անցավ",

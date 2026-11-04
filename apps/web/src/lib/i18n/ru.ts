@@ -589,6 +589,7 @@ export const ru: Dict = {
   'replay.hit': "бьёт",
   'replay.off': "выбросил",
   'replay.bar': "бар",
+  'game.hint': "Подсказка",
   'game.undo': "Назад",
   'game.yourMove': "Твой ход",
   'game.noMoves': "Хода нет, очередь переходит",

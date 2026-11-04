@@ -589,6 +589,7 @@ export const en: Dict = {
   'replay.hit': "hit",
   'replay.off': "bore off",
   'replay.bar': "bar",
+  'game.hint': "Hint",
   'game.undo': "Undo",
   'game.yourMove': "Your move",
   'game.noMoves': "No move — the turn passes",

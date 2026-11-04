@@ -1,6 +1,7 @@
-import { Board, Seat, Sequence, absIndex, legalSequences, opp, otherSeat, own, pips, relOf } from './board';
+import { Board, Move, Seat, Sequence, absIndex, legalSequences, opp, otherSeat, own, pips, relOf } from './board';
 import { Action, MatchState, turnCtx } from './game';
 import { Variant } from './rules';
+import { PlayerView, viewCtx } from './view';
 
 /** How good a position is for `seat` (bigger is better). */
 export function evaluate(b: Board, variant: Variant, seat: Seat): number {
@@ -68,4 +69,13 @@ export function autoAction(state: MatchState, seat: Seat): Action {
   if (g.phase === 'roll') return { type: 'roll' };
   const seqs = legalSequences(g.board, turnCtx(state), g.dice!);
   return { type: 'move', moves: pick(seqs, state.config.variant, seat, 'medium', () => 0.5).moves };
+}
+
+/** The strongest bot's choice for the player to move in this view (practice hints). */
+export function viewHint(v: PlayerView): Move[] {
+  const ctx = viewCtx(v);
+  if (!ctx) return [];
+  const seqs = legalSequences(v.board, ctx, v.dice!);
+  if (!seqs.length) return [];
+  return pick(seqs, v.config.variant, ctx.seat, 'strong', Math.random).moves;
 }
