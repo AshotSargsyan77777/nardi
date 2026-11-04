@@ -129,7 +129,7 @@ export function PlayModes({ compact = false }: { compact?: boolean }) {
       <LinkCard href="/play/random" icon="🎲" title={t('home.playRandom')} sub={t('home.playRandomSub')} accent="sky" />
       {config?.features.practiceBotsEnabled !== false && (
         <div className="space-y-2">
-          <LinkCard onClick={practice.start} disabled={practice.busy} icon="🎲" title={t('home.playFree')} sub={practice.error ?? t('home.playFreeSub')} accent="emerald" />
+          <LinkCard onClick={practice.start} disabled={practice.busy} icon="🤖" title={t('home.playFree')} sub={practice.error ?? t('home.playFreeSub')} accent="emerald" />
           <BotLevelPicker level={practice.level} onChange={practice.setLevel} />
           <button onClick={practice.learn} className="block w-full text-center text-xs font-semibold text-gold-300 hover:underline">🎓 {t('tip.learn')}</button>
         </div>

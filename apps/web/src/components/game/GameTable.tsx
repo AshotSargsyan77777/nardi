@@ -280,6 +280,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
         <span className="hidden text-xs text-white/40 sm:inline short:hidden">{t('game.gameN', { n: v.handNumber })}</span>
         {dto.stake > 0 && <span className="text-xs text-white/50">{t('game.stake')}: <Coins amount={dto.stake} currency={dto.currency} /></span>}
         {dto.mode === 'PRACTICE' && <span className="short:hidden"><Badge color="blue">{t('game.practice')}</Badge></span>}
+        {dto.mode === 'TOURNAMENT' && <span className="short:hidden"><Badge color="gold">🏟️ {t('nav.tournaments')}</Badge></span>}
         <div className="ml-auto flex items-center gap-1">
           {!connected && <Badge color="red">{t('game.reconnecting')}</Badge>}
           {v.lastTurn && v.lastTurn.moves.length > 0 && !prefix.length && (
@@ -409,7 +410,10 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
           {v.history.some((h) => h.mars) && <p className="mt-2 text-sm text-gold-200">{t('game.marsCount', { n: v.history.filter((h) => h.mars && h.winner === mySeat).length, m: v.history.filter((h) => h.mars && h.winner !== mySeat).length })}</p>}
           {v.finishReason === 'forfeit' && <p className="mt-2 text-sm text-white/50">{t('game.forfeit')}</p>}
           {dto.stake > 0 && !spectator && <p className="mt-2"><Coins amount={won ? dto.stake : -dto.stake} currency={dto.currency} signed /></p>}
-          {v.finishReason !== 'forfeit' && !spectator && (
+          {dto.mode === 'TOURNAMENT' && !spectator && (
+            <Link href="/tournaments" className="mt-5 block"><Button variant="emerald" size="lg">🏟️ {t('tourney.title')} →</Button></Link>
+          )}
+          {v.finishReason !== 'forfeit' && !spectator && dto.mode !== 'TOURNAMENT' && (
             <div className="mt-5">
               <Button variant="emerald" size="lg" loading={rematch.sent && !rematch.needed} disabled={rematch.sent} onClick={askRematch}>🔁 {t('game.rematch')}</Button>
               {rematch.sent && rematch.needed > 1 && <p className="mt-2 text-sm text-white/60">{t('game.rematchWaiting', { n: rematch.seats.length, total: rematch.needed })}</p>}

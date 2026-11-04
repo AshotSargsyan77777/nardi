@@ -6,6 +6,7 @@ import { Avatar } from '@/components/Avatar';
 import { LogoMark, Rosette } from '@/components/Logo';
 import { InstallBanner } from '@/components/InstallApp';
 import { MobileLobby } from '@/components/MobileLobby';
+import { NextTournament } from '@/components/NextTournament';
 import { QuestsPanel } from '@/components/Quests';
 import { PlayModal, usePractice } from '@/components/PlayActions';
 import { DiceArt } from '@/components/DiceArt';
@@ -117,6 +118,7 @@ function Dashboard() {
         </Link>
       )}
       <Hero onPlay={() => setPlayOpen(true)} />
+      <NextTournament />
       <QuestsPanel />
       <PlayModal open={playOpen} onClose={() => setPlayOpen(false)} />
 

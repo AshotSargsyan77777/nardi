@@ -9,6 +9,7 @@ import { useI18n } from '@/lib/i18n';
 import { InstallBanner } from './InstallApp';
 import { QuestsChip } from './Quests';
 import { PushToggle } from './PushToggle';
+import { NextTournament } from './NextTournament';
 import { BotLevelPicker, VariantPicker, usePractice } from './PlayActions';
 import { DiceArt } from './DiceArt';
 
@@ -63,6 +64,7 @@ export function MobileLobby() {
           </Link>
         )}
         <QuestsChip />
+        <NextTournament chip />
         <Link href="/invite" className="rounded-full bg-white/5 px-4 py-1.5 text-sm font-bold text-gold-200 ring-1 ring-gold-400/30">🎁 {t('invite.title')}</Link>
         <PushToggle chip />
         <InstallBanner chip />

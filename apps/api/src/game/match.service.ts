@@ -193,6 +193,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const rt = this.runtimes.get(matchId);
     if (!rt || !rt.players.some((p) => p.userId === userId)) throw new AppError('NOT_IN_MATCH', 'Not a player');
     if (rt.engine.status !== 'finished') throw new AppError('MATCH_NOT_FINISHED', 'The match is not over yet');
+    if (rt.mode === 'TOURNAMENT') throw new AppError('NO_REMATCH', 'Tournament matches have no rematch');
     const humans = rt.players.filter((p) => p.userId).map((p) => p.userId!);
     const votes = this.rematchVotes.get(matchId) ?? new Set<string>();
     votes.add(userId);

@@ -32,7 +32,9 @@ function Notifications() {
   const label = (n: any) => {
     const key = `notif.${n.title}`;
     const title = t(key) !== key ? t(key) : t(`notif.${n.type}`);
-    const body = n.type === 'achievement' ? t(`ach.${n.body}`) : n.body;
+    const body = n.type === 'achievement' ? t(`ach.${n.body}`)
+      : n.title === 'tournament.place' ? t('notif.tournament.placeBody', { n: n.body, prize: n.data?.prize ? ` · +${Number(n.data.prize).toLocaleString()} FC` : '' })
+      : n.body;
     return { title, body };
   };
   return (
@@ -198,7 +200,7 @@ function PhoneMenu({ onClose }: { onClose: () => void }) {
   const { refreshMe, config } = useApp();
   if (!me) return null;
   const items: [string, string, string][] = [
-    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/invite', '🎁', t('invite.title')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
+    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/invite', '🎁', t('invite.title')], ['/tournaments', '🏟️', t('nav.tournaments')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
     ['/wallet', '◉', t('nav.wallet')], ['/profile', '👤', t('nav.profile')], ['/profile/settings', '⚙️', t('nav.settings')],
     ['/rules', '📖', t('nav.rules')], ['/support', '💬', t('nav.support')],
     ...(me.role !== 'USER' ? [['/admin', '🛠️', t('nav.admin')] as [string, string, string]] : []),
