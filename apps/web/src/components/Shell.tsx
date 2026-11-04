@@ -200,7 +200,7 @@ function PhoneMenu({ onClose }: { onClose: () => void }) {
   const { refreshMe, config } = useApp();
   if (!me) return null;
   const items: [string, string, string][] = [
-    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/invite', '🎁', t('invite.title')], ['/tournaments', '🏟️', t('nav.tournaments')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
+    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/clubs', '🏘️', t('nav.clubs')], ['/invite', '🎁', t('invite.title')], ['/tournaments', '🏟️', t('nav.tournaments')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
     ['/wallet', '◉', t('nav.wallet')], ['/profile', '👤', t('nav.profile')], ['/profile/settings', '⚙️', t('nav.settings')],
     ['/rules', '📖', t('nav.rules')], ['/support', '💬', t('nav.support')],
     ...(me.role !== 'USER' ? [['/admin', '🛠️', t('nav.admin')] as [string, string, string]] : []),
