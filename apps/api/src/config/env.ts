@@ -33,6 +33,9 @@ export function loadEnv() {
     accessTokenTtlSec: Number(process.env.ACCESS_TOKEN_TTL_SEC ?? 900),
     refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 90),
     botDelayMs: Number(process.env.BOT_DELAY_MS ?? 900),
+    /** Outgoing mail (password reset) through Resend; empty = mails are only logged. */
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    mailFrom: process.env.MAIL_FROM || 'NARDI <no-reply@example.com>',
     internalBaseUrl: process.env.INTERNAL_BASE_URL || `http://127.0.0.1:${process.env.PORT ?? 4000}`,
   };
 

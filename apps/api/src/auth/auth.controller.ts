@@ -30,6 +30,14 @@ class PasswordDto {
   @IsString() @MinLength(8) @MaxLength(128) next: string;
 }
 
+class ForgotDto {
+  @IsEmail() @MaxLength(254) email: string;
+}
+class ResetDto {
+  @IsString() @Length(10, 200) token: string;
+  @IsString() @MinLength(8) @MaxLength(128) password: string;
+}
+
 const meta = (req: Request) => ({ ip: req.ip, ua: req.headers['user-agent'] });
 
 @Controller('auth')
@@ -97,6 +105,19 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() u: AuthUser) {
     return this.users.me(u.id);
+  }
+
+  @Public() @Post('forgot') @HttpCode(200) @Throttle({ default: { limit: limit(5), ttl: 60_000 } })
+  async forgot(@Body() dto: ForgotDto, @Req() req: Request) {
+    await this.auth.requestReset(dto.email, meta(req));
+    return { ok: true };
+  }
+
+  @Public() @Post('reset') @HttpCode(200) @Throttle({ default: { limit: limit(10), ttl: 60_000 } })
+  async reset(@Body() dto: ResetDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const tokens = await this.auth.resetPassword(dto.token, dto.password, meta(req));
+    this.setCookies(res, tokens);
+    return { ok: true };
   }
 
   @Post('password') @HttpCode(200) @Throttle({ default: { limit: limit(5), ttl: 60_000 } })

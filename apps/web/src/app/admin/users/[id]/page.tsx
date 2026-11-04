@@ -58,6 +58,13 @@ export default function AdminUserDetail() {
             {isAdmin && (u.status === 'ACTIVE'
               ? <Button variant="danger" onClick={async () => { const r = await ask(t('admin.block')); if (r) run(() => api(`/admin/users/${id}/block`, { method: 'POST', body: { reason: r } })); }}>{t('admin.block')}</Button>
               : <Button variant="emerald" onClick={() => run(() => api(`/admin/users/${id}/unblock`, { method: 'POST' }))}>{t('admin.unblock')}</Button>)}
+            {(me?.role === 'ADMIN' || me?.role === 'SUPERADMIN') && (
+              <Button variant="subtle" onClick={async () => {
+                const r = await api<{ link: string }>(`/admin/users/${id}/reset-link`, { method: 'POST' });
+                try { await navigator.clipboard.writeText(r.link); } catch { /* clipboard blocked */ }
+                window.prompt(t('admin.resetLinkCopied'), r.link);
+              }}>🔑 {t('admin.resetLink')}</Button>
+            )}
             {u.avatar?.startsWith('photo:') && <Button variant="subtle" onClick={() => run(() => api(`/admin/users/${id}/remove-photo`, { method: 'POST' }))}>{t('profile.photoRemove')}</Button>}
             {me?.role === 'SUPERADMIN' && (
               <select className={`${inputCls} w-40`} value={u.role} onChange={(e) => run(() => api(`/admin/users/${id}/role`, { method: 'PATCH', body: { role: e.target.value } }))}>

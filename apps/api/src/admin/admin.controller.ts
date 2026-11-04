@@ -9,6 +9,7 @@ import { jsonSafe, page } from '../common/util';
 import { MatchService } from '../game/match.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { SettingsService } from '../settings/settings.service';
+import { AuthService } from '../auth/auth.service';
 import { AdminService } from './admin.service';
 
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
@@ -39,6 +40,7 @@ export class AdminController {
     private ledger: LedgerService,
     private audit: AuditService,
     private prisma: PrismaService,
+    private auth: AuthService,
   ) {}
 
   // -------------------------------------------------------------- analytics
@@ -52,6 +54,13 @@ export class AdminController {
   block(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @ClientIp() ip: string) { return this.admin.setStatus(id, 'BLOCKED', d.reason, admin(u, ip)); }
   @Post('users/:id/unblock') @Roles('ADMIN') @HttpCode(200)
   unblock(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ClientIp() ip: string) { return this.admin.setStatus(id, 'ACTIVE', '', admin(u, ip)); }
+  /** For support when the player cannot get the e-mail: a one-time reset link to pass on to them. */
+  @Post('users/:id/reset-link') @Roles('ADMIN') @HttpCode(200)
+  async resetLink(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ClientIp() ip: string) {
+    await this.prisma.user.findUniqueOrThrow({ where: { id } });
+    await this.audit.log(this.prisma, { actorId: u.id, action: 'admin.password_reset_link', targetType: 'user', targetId: id, ip });
+    return { link: await this.auth.resetLink(id) };
+  }
   @Post('users/:id/remove-photo') @HttpCode(200)
   removePhoto(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ClientIp() ip: string) { return this.admin.removePhoto(id, admin(u, ip)); }
   @Patch('users/:id/role') @Roles('SUPERADMIN')

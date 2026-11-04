@@ -6,6 +6,7 @@ import { hash, verify } from '@node-rs/argon2';
 import { User } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { AuditService } from '../common/audit.service';
+import { MailService } from '../common/mail.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
@@ -31,6 +32,7 @@ export class AuthService {
     private redis: RedisService,
     private audit: AuditService,
     private referrals: ReferralsService,
+    private mail: MailService,
     @Inject(ENV) private env: Env,
   ) {}
 
@@ -153,6 +155,52 @@ export class AuthService {
     return this.issue(updated, meta);
   }
 
+  // ---------------------------------------------------------------- password reset
+
+  /** A one-time link (valid 1 hour) to set a new password. */
+  async resetLink(userId: string) {
+    const token = randomToken(32);
+    await this.redis.set(`pwreset:${sha256(token)}`, userId, 3600);
+    return `${this.env.webOrigin}/reset?token=${encodeURIComponent(token)}`;
+  }
+
+  /**
+   * «Forgot password»: mails a reset link if the address belongs to an active account. Always
+   * answers the same way, so it cannot be used to find out who is registered.
+   */
+  async requestReset(email: string, meta: { ip?: string }) {
+    const addr = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email: addr }, select: { id: true, nickname: true, locale: true, status: true } });
+    if (!user || user.status !== 'ACTIVE') return;
+    // at most one mail per account every 2 minutes
+    if (await this.redis.get(`pwreset:sent:${user.id}`)) return;
+    await this.redis.set(`pwreset:sent:${user.id}`, '1', 120);
+    const link = await this.resetLink(user.id);
+    const m = RESET_MAIL[(user.locale as 'hy' | 'ru' | 'en') in RESET_MAIL ? (user.locale as 'hy' | 'ru' | 'en') : 'hy'];
+    const text = `${m.hello(user.nickname)}\n\n${m.body}\n${link}\n\n${m.ignore}`;
+    const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#1b1b1b">
+      <p>${m.hello(escapeHtml(user.nickname))}</p><p>${m.body}</p>
+      <p><a href="${link}" style="display:inline-block;background:#d9a634;color:#111;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold">${m.button}</a></p>
+      <p style="color:#666;font-size:13px">${m.ignore}</p></div>`;
+    await this.mail.send({ to: addr, subject: m.subject, text, html });
+    await this.audit.log(this.prisma, { actorId: user.id, action: 'user.password_reset_requested', targetType: 'user', targetId: user.id, ip: meta.ip });
+  }
+
+  /** Sets the new password from a reset link, signs out everywhere else and signs in here. */
+  async resetPassword(token: string, next: string, meta: { ip?: string; ua?: string }) {
+    if (!token || token.length > 200) throw new AppError('BAD_RESET_LINK', 'This link is not valid any more', 400);
+    const userId = await this.redis.take(`pwreset:${sha256(token)}`);
+    if (!userId) throw new AppError('BAD_RESET_LINK', 'This link is not valid any more', 400);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({ where: { id: userId }, data: { passwordHash: await this.hashPassword(next), tokenVersion: { increment: 1 } } });
+      await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await this.audit.log(tx, { actorId: userId, action: 'user.password_reset', targetType: 'user', targetId: userId, ip: meta.ip });
+      return u;
+    });
+    if (updated.status !== 'ACTIVE') throw new AppError('ACCOUNT_BLOCKED', 'This account is blocked', 403);
+    return this.issue(updated, meta);
+  }
+
   async wsTicket(userId: string) {
     const ticket = randomToken(32);
     await this.redis.set(`ws:ticket:${ticket}`, userId, 60);
@@ -167,3 +215,29 @@ export class AuthService {
 
 // Constant-time-ish behaviour for unknown accounts (avoid user enumeration by timing).
 const DUMMY_HASH = '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRzb21lc2FsdA$4jK3l6Ldl3yQGOG4G1g2Ixq6dB0F8Yx7VQ0eQf3m8hE';
+
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const RESET_MAIL = {
+  hy: {
+    subject: 'Գաղտնաբառի վերականգնում',
+    hello: (n: string) => `Բարև, ${n}։`,
+    body: 'Դու խնդրել ես նոր գաղտնաբառ։ Սեղմիր կոճակը (հղումը գործում ա 1 ժամ)։',
+    button: 'Նոր գաղտնաբառ',
+    ignore: 'Եթե դու չես խնդրել, ուղղակի անտեսիր այս նամակը. գաղտնաբառդ չի փոխվի։',
+  },
+  ru: {
+    subject: 'Восстановление пароля',
+    hello: (n: string) => `Привет, ${n}!`,
+    body: 'Вы запросили новый пароль. Нажмите кнопку (ссылка действует 1 час).',
+    button: 'Новый пароль',
+    ignore: 'Если это были не вы, просто проигнорируйте письмо — пароль не изменится.',
+  },
+  en: {
+    subject: 'Reset your password',
+    hello: (n: string) => `Hi ${n},`,
+    body: 'You asked for a new password. Tap the button (the link works for 1 hour).',
+    button: 'Set a new password',
+    ignore: 'If this was not you, just ignore this e-mail — your password stays the same.',
+  },
+};

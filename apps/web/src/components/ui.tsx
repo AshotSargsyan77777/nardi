@@ -174,8 +174,12 @@ export function Pager({ page, total, pageSize, onPage }: { page: number; total: 
 }
 
 export function ErrorText({ error }: { error: unknown }) {
+  const { t } = useI18n();
   if (!error) return null;
-  const msg = error instanceof Error ? error.message : String(error);
+  // a translated text for known server error codes, else the server's message
+  const code = (error as { code?: string })?.code;
+  const known = code ? t(`err.${code}`) : '';
+  const msg = known && known !== `err.${code}` ? known : error instanceof Error ? error.message : String(error);
   return <p className="rounded-lg bg-ruby-500/10 px-3 py-2 text-sm text-ruby-400 ring-1 ring-ruby-500/20">{msg}</p>;
 }
 

@@ -39,6 +39,7 @@ function LoginForm() {
       <form onSubmit={submit} className="space-y-4">
         <Field label={t('auth.loginOrEmail')}><input className={inputCls} value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" required /></Field>
         <Field label={t('auth.password')}><input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></Field>
+        <div className="-mt-2 text-right"><Link href="/forgot" className="text-xs text-white/50 hover:text-gold-300 hover:underline">{t('reset.forgotLink')}</Link></div>
         <ErrorText error={error} />
         <Button variant="gold" size="lg" className="w-full" loading={busy}>{t('auth.submitLogin')}</Button>
         <p className="text-center text-sm text-white/50">{t('auth.noAccount')} <Link href={`/register?next=${encodeURIComponent(next)}`} className="font-semibold text-gold-300 hover:underline">{t('nav.register')}</Link></p>

@@ -1,3 +1,4 @@
+import { MailService } from '../src/common/mail.service';
 import { QuestsService } from '../src/users/quests.service';
 import { INestApplication } from '@nestjs/common';
 import { MatchDTO } from '@nardi/engine';
@@ -266,6 +267,32 @@ describe('NARDI API end-to-end', () => {
       expect(Number(escrowAfter?.balance)).toBe(0);
       expect((await ledger.verify()).ok).toBe(true);
       sockets.forEach((s) => s.close());
+    });
+  });
+
+  describe('password reset', () => {
+    it('mails a one-time link that sets a new password', async () => {
+      const u = await registerUser(app);
+      const mail = app.get(MailService);
+      mail.outbox.length = 0;
+      const agent = request.agent(app.getHttpServer());
+      const csrf = (await agent.get('/api/auth/csrf')).body.csrfToken;
+      // unknown address: same answer, no mail
+      expect((await agent.post('/api/auth/forgot').set('x-csrf-token', csrf).send({ email: 'nobody@example.com' })).status).toBe(200);
+      expect(mail.outbox).toHaveLength(0);
+      expect((await agent.post('/api/auth/forgot').set('x-csrf-token', csrf).send({ email: `${u.nickname}@example.com` })).status).toBe(200);
+      expect(mail.outbox).toHaveLength(1);
+      const token = decodeURIComponent(mail.outbox[0].text.match(/reset\?token=([^\s]+)/)![1]);
+      const r = await agent.post('/api/auth/reset').set('x-csrf-token', csrf).send({ token, password: 'brand-new-password-1' });
+      expect(r.status).toBe(200);
+      const csrf2 = (await agent.get('/api/auth/csrf')).body.csrfToken;
+      // used up
+      expect((await agent.post('/api/auth/reset').set('x-csrf-token', csrf2).send({ token, password: 'another-password-2' })).status).toBe(400);
+      const login = await agent.post('/api/auth/login').set('x-csrf-token', csrf2).send({ login: u.nickname, password: 'brand-new-password-1' });
+      expect(login.status).toBe(200);
+      const csrf3 = (await agent.get('/api/auth/csrf')).body.csrfToken;
+      const old = await agent.post('/api/auth/login').set('x-csrf-token', csrf3).send({ login: u.nickname, password: 'correct-horse-battery' });
+      expect(old.status).toBe(401);
     });
   });
 

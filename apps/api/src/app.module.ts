@@ -12,6 +12,7 @@ import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { MailService } from './common/mail.service';
 import { AuditService } from './common/audit.service';
 import { AllExceptionsFilter } from './common/errors';
 import { AuthGuard, CsrfGuard } from './common/guards';
@@ -51,7 +52,7 @@ class HttpThrottlerGuard extends ThrottlerGuard {
   ],
   providers: [
     { provide: ENV, useFactory: loadEnv },
-    PrismaService, RedisService, AuditService, SettingsService, BlocksService, FriendsService, QuestsService, ReferralsService, PushService, LedgerService, WalletService, AuthService, UsersService,
+    PrismaService, RedisService, AuditService, MailService, SettingsService, BlocksService, FriendsService, QuestsService, ReferralsService, PushService, LedgerService, WalletService, AuthService, UsersService,
     RealtimeService, StakePolicy, MatchService, RoomsService, MatchmakingService, GameGateway, AdminService,
     { provide: APP_GUARD, useClass: HttpThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
