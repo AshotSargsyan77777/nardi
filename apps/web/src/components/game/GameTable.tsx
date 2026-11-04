@@ -207,6 +207,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
   }, [v.dice, v.lastTurn, v.phase, myMove, prefix]);
   const lastMoves = v.lastTurn && v.lastTurn.seat !== mySeat && !prefix.length ? v.lastTurn.moves : [];
 
+  const vertical = usePortraitPhone();
   const won = finished && v.winnerTeam === mySeat;
   const total = v.config.turnTimeoutSec;
   const controls = (
@@ -260,7 +261,7 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
         </div>
 
         <div className="relative flex min-h-0 flex-1 items-center justify-center px-1">
-          <div className="relative aspect-[1000/720] max-h-full w-full max-w-[1100px]">
+          <div className={`relative max-h-full w-full ${vertical ? 'aspect-[720/1000] max-w-[min(100%,72vh)]' : 'aspect-[1000/720] max-w-[1100px]'}`}>
             <NardiBoard
               board={shownBoard}
               variant={v.config.variant}
@@ -270,11 +271,12 @@ export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator
               targets={targets}
               lastMoves={lastMoves}
               dice={dice}
+              vertical={vertical}
               rollKey={v.dice ? `${v.handNumber}:${v.turns[0] + v.turns[1]}` : null}
               onPick={onPick}
             />
             {myTurn && v.phase === 'roll' && (
-              <div className="absolute inset-y-0 right-[8%] flex w-[44%] items-center justify-center">
+              <div className={`absolute flex items-center justify-center ${vertical ? 'inset-x-0 bottom-[8%] h-[44%]' : 'inset-y-0 right-[8%] w-[44%]'}`}>
                 <motion.button
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -430,4 +432,17 @@ function PlayerMenu({ nickname, matchId, muted, onMute, onClose }: { nickname: s
       </div>
     </Modal>
   );
+}
+
+/** Phones held upright: the board is drawn standing up so it can use the whole height. */
+function usePortraitPhone() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait) and (max-width: 700px)');
+    const update = () => setOn(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return on;
 }

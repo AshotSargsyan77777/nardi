@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Board as BoardState, Move, Seat, Variant, relOf } from '@nardi/engine';
 
@@ -54,6 +54,8 @@ export interface BoardProps {
   dice: { value: number; used: boolean }[];
   /** Changes on every new roll (null when the dice shown are an old roll): starts the roll animation. */
   rollKey?: string | null;
+  /** Portrait phones: the board is drawn standing up (transposed), so it can be much bigger. */
+  vertical?: boolean;
   onPick: (where: number | 'bar' | 'off') => void;
 }
 
@@ -119,7 +121,7 @@ function useCheckerIds(board: BoardState, variant: Variant) {
   }, [board, variant]);
 }
 
-export function NardiBoard({ board, variant, viewer, sources, selected, targets, lastMoves, dice, rollKey = null, onPick }: BoardProps) {
+export function NardiBoard({ board, variant, viewer, sources, selected, targets, lastMoves, dice, rollKey = null, vertical = false, onPick }: BoardProps) {
   const rel = (abs: number) => relOf(variant, viewer, abs);
   const opp = (1 - viewer) as Seat;
   const lastTo = new Set(lastMoves.map((m) => m.to));
@@ -168,7 +170,8 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
   };
 
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} className="h-full w-full select-none" style={{ touchAction: 'manipulation' }} role="img" aria-label="board">
+    <svg viewBox={vertical ? `0 0 ${VH} ${VW}` : `0 0 ${VW} ${VH}`} className="h-full w-full select-none" style={{ touchAction: 'manipulation' }} role="img" aria-label="board">
+      <Upright.Provider value={vertical}>
       <defs>
         <radialGradient id="ck-light" cx="0.38" cy="0.32" r="0.75">
           <stop offset="0" stopColor="#fffdf6" />
@@ -205,6 +208,7 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
         </radialGradient>
       </defs>
 
+      <g transform={vertical ? 'matrix(0 1 1 0 0 0)' : undefined}>
       <image href="/board/board.webp" x={0} y={0} width={VW} height={VH} preserveAspectRatio="none" />
 
       {/* where the selected checker can go */}
@@ -238,14 +242,14 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
           >
             <Checker seat={s.seat} glow={glow} chosen={chosen} />
             {s.i === s.n - 1 && s.n > 5 && !inTray && (
-              <text x={0} y={9} textAnchor="middle" fontSize={25} fontWeight={800} fill={s.seat === 0 ? '#3b2f1a' : '#f4ead2'}>{s.n}</text>
+              <UprightText x={0} y={0} dy={9} fontSize={25} fill={s.seat === 0 ? '#3b2f1a' : '#f4ead2'}>{s.n}</UprightText>
             )}
           </motion.g>
         );
       })}
       {/* borne-off counters */}
       {([viewer, opp] as Seat[]).map((s) => board.off[s] > 0 && (
-        <text key={`oc${s}`} x={OFF_X + OFF_W / 2} y={s === viewer ? MID + 30 : MID - 14} textAnchor="middle" fontSize={20} fontWeight={800} fill="#f3dca9" opacity={0.8}>{board.off[s]}</text>
+        <UprightText key={`oc${s}`} x={OFF_X + OFF_W / 2} y={s === viewer ? MID + 24 : MID - 20} dy={7} fontSize={20} fill="#f3dca9" opacity={0.8}>{board.off[s]}</UprightText>
       ))}
 
       <Dice dice={dice} rollKey={rollKey} />
@@ -256,12 +260,26 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
       ))}
       <rect x={BAR_X} y={MID} width={BAR_W} height={(Y1 - Y0) / 2} fill="transparent" onClick={() => onPick('bar')} />
       <rect x={OFF_X} y={Y0} width={OFF_W} height={Y1 - Y0} fill="transparent" onClick={() => onPick('off')} style={{ cursor: isTarget('off') ? 'pointer' : 'default' }} />
+      </g>
       <style>{`
         .nb-pulse { animation: nbPulse 1.1s ease-in-out infinite; }
         @keyframes nbPulse { 0%, 100% { opacity: .22 } 50% { opacity: .5 } }
         @media (prefers-reduced-motion: reduce) { .nb-pulse { animation: none } }
       `}</style>
+      </Upright.Provider>
     </svg>
+  );
+}
+
+const Upright = createContext(false);
+
+/** Text that stays readable when the board is drawn transposed (portrait). */
+function UprightText({ x, y, dy, fontSize, fill, opacity, children }: { x: number; y: number; dy: number; fontSize: number; fill: string; opacity?: number; children: React.ReactNode }) {
+  const vertical = useContext(Upright);
+  return (
+    <g transform={`translate(${x} ${y})${vertical ? ' matrix(0 1 1 0 0 0)' : ''}`}>
+      <text x={0} y={dy} textAnchor="middle" fontSize={fontSize} fontWeight={800} fill={fill} opacity={opacity}>{children}</text>
+    </g>
   );
 }
 
@@ -271,9 +289,10 @@ function Checker({ seat, glow, chosen }: { seat: Seat; glow: boolean; chosen: bo
   const rim = light ? '#8d7a52' : '#000';
   const groove = light ? 'rgba(90,70,35,.35)' : 'rgba(0,0,0,.65)';
   const ridge = light ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.13)';
+  const vertical = useContext(Upright);
   return (
     <g>
-      <ellipse cx={3} cy={6} rx={R + 3} ry={R + 2} fill="url(#ck-shadow)" />
+      <ellipse cx={vertical ? 6 : 3} cy={vertical ? 3 : 6} rx={R + 3} ry={R + 2} fill="url(#ck-shadow)" />
       <circle r={R} fill={light ? 'url(#ck-light)' : 'url(#ck-dark)'} stroke={rim} strokeWidth={1.5} />
       <circle r={R * 0.8} fill="none" stroke={groove} strokeWidth={2} />
       <circle r={R * 0.8 + 1.6} fill="none" stroke={ridge} strokeWidth={1} />
@@ -351,9 +370,10 @@ function Dice({ dice, rollKey }: { dice: { value: number; used: boolean }[]; rol
 
 function Die({ size, value }: { size: number; value: number }) {
   const h = size / 2;
+  const vertical = useContext(Upright);
   return (
     <g>
-      <rect x={-h + 4} y={-h + 7} width={size} height={size} rx={size * 0.2} fill="#000" opacity={0.35} style={{ filter: 'blur(3px)' }} />
+      <rect x={-h + (vertical ? 7 : 4)} y={-h + (vertical ? 4 : 7)} width={size} height={size} rx={size * 0.2} fill="#000" opacity={0.35} style={{ filter: 'blur(3px)' }} />
       <rect x={-h} y={-h} width={size} height={size} rx={size * 0.2} fill="url(#die-face)" stroke="#a8997a" strokeWidth={1.2} />
       <rect x={-h + 3} y={-h + 3} width={size - 6} height={size - 6} rx={size * 0.17} fill="none" stroke="#fff" strokeOpacity={0.8} strokeWidth={1.4} />
       {PIPS[value]?.map(([px, py], i) => (
