@@ -683,3 +683,34 @@ model PushSubscription {
 
   @@index([userId])
 }
+
+// ---------------------------------------------------------------- clubs («բակ»): groups of players with their own table
+
+enum ClubRole {
+  OWNER
+  MEMBER
+}
+
+model Club {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  nameLower   String       @unique
+  emblem      String       @default("🎲")
+  description String       @default("")
+  ownerId     String       @db.Uuid
+  inviteCode  String       @unique
+  createdAt   DateTime     @default(now())
+  members     ClubMember[]
+}
+
+model ClubMember {
+  id       String   @id @default(uuid()) @db.Uuid
+  clubId   String   @db.Uuid
+  club     Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId   String   @db.Uuid
+  role     ClubRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  @@unique([clubId, userId])
+  @@index([userId])
+}

@@ -325,6 +325,33 @@ describe('NARDI API end-to-end', () => {
     }, 320_000);
   });
 
+  describe('clubs', () => {
+    it('creates a club, joins by invite code, ranks members and hands over ownership', async () => {
+      const [a, b, c] = await Promise.all([0, 1, 2].map(() => registerUser(app)));
+      const name = `Bak ${randomUUID().slice(0, 6)}`;
+      const created = await post(a, '/api/clubs', { name, emblem: '🌳', description: 'Մեր բակը' });
+      expect(created.status).toBe(200);
+      expect((await post(b, '/api/clubs', { name: name.toUpperCase() })).status).toBe(409); // name taken (any case)
+      const club = (await a.agent.get(`/api/clubs/${created.body.id}`)).body;
+      expect(club.myRole).toBe('OWNER');
+      expect(club.inviteCode).toHaveLength(6);
+      expect((await b.agent.get(`/api/clubs/${club.id}`)).status).toBe(403); // not a member yet
+      expect((await b.agent.get(`/api/clubs/invite/${club.inviteCode.toLowerCase()}`)).body).toMatchObject({ name, members: 1 });
+      expect((await post(b, `/api/clubs/invite/${club.inviteCode}/join`)).status).toBe(200);
+      expect((await post(c, `/api/clubs/invite/${club.inviteCode}/join`)).status).toBe(200);
+      const full = (await b.agent.get(`/api/clubs/${club.id}`)).body;
+      expect(full.members).toHaveLength(3);
+      expect(full.myRole).toBe('MEMBER');
+      // only the owner removes members
+      expect((await b.agent.delete(`/api/clubs/${club.id}/members/${c.id}`).set('x-csrf-token', b.csrf)).status).toBe(403);
+      expect((await a.agent.delete(`/api/clubs/${club.id}/members/${c.id}`).set('x-csrf-token', a.csrf)).status).toBe(200);
+      // the owner leaves: the next member takes over
+      expect((await post(a, `/api/clubs/${club.id}/leave`)).status).toBe(200);
+      expect((await b.agent.get(`/api/clubs/${club.id}`)).body.myRole).toBe('OWNER');
+      expect((await b.agent.get('/api/clubs')).body.items.map((x: any) => x.id)).toContain(club.id);
+    });
+  });
+
   describe('password reset', () => {
     it('mails a one-time link that sets a new password', async () => {
       const u = await registerUser(app);
