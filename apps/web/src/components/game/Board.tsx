@@ -2,6 +2,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Board as BoardState, Move, Seat, Variant, relOf } from '@nardi/engine';
+import { useApp } from '@/lib/app-state';
+import { CheckerColors, checkerColors, useLook } from '@/lib/look';
 
 /**
  * The nardi board. The wooden board itself is a pre-rendered image (scripts/board-texture.mjs);
@@ -127,6 +129,9 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
   const lastTo = new Set(lastMoves.map((m) => m.to));
   const lastFrom = new Set(lastMoves.map((m) => m.from));
   const { ids, movers } = useCheckerIds(board, variant);
+  const { me } = useApp();
+  const look = useLook(me?.level ?? 1);
+  const ck = checkerColors(look.checkers);
 
   const isSource = (w: number | 'bar') => sources.includes(w);
   const isTarget = (w: number | 'off') => targets.includes(w);
@@ -173,18 +178,14 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
     <svg viewBox={vertical ? `0 0 ${VH} ${VW}` : `0 0 ${VW} ${VH}`} className="h-full w-full select-none" style={{ touchAction: 'manipulation' }} role="img" aria-label="board">
       <Upright.Provider value={vertical}>
       <defs>
-        <radialGradient id="ck-light" cx="0.38" cy="0.32" r="0.75">
-          <stop offset="0" stopColor="#fffdf6" />
-          <stop offset="0.55" stopColor="#efe4cc" />
-          <stop offset="0.9" stopColor="#cdbb93" />
-          <stop offset="1" stopColor="#a8936a" />
-        </radialGradient>
-        <radialGradient id="ck-dark" cx="0.38" cy="0.32" r="0.75">
-          <stop offset="0" stopColor="#5a5148" />
-          <stop offset="0.5" stopColor="#2a2420" />
-          <stop offset="0.92" stopColor="#141110" />
-          <stop offset="1" stopColor="#070606" />
-        </radialGradient>
+        {([['ck-light', ck.light], ['ck-dark', ck.dark]] as const).map(([id, c]) => (
+          <radialGradient key={id} id={id} cx="0.38" cy="0.32" r="0.75">
+            <stop offset="0" stopColor={c.stops[0]} />
+            <stop offset="0.55" stopColor={c.stops[1]} />
+            <stop offset="0.9" stopColor={c.stops[2]} />
+            <stop offset="1" stopColor={c.stops[3]} />
+          </radialGradient>
+        ))}
         <radialGradient id="ck-shadow">
           <stop offset="0.55" stopColor="#000" stopOpacity="0.5" />
           <stop offset="1" stopColor="#000" stopOpacity="0" />
@@ -209,7 +210,7 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
       </defs>
 
       <g transform={vertical ? 'matrix(0 1 1 0 0 0)' : undefined}>
-      <image href="/board/board.webp" x={0} y={0} width={VW} height={VH} preserveAspectRatio="none" />
+      <image href={`/board/${look.board}.webp`} x={0} y={0} width={VW} height={VH} preserveAspectRatio="none" />
 
       {/* where the selected checker can go */}
       {points.map((p) => isTarget(p.abs) && (
@@ -240,9 +241,9 @@ export function NardiBoard({ board, variant, viewer, sources, selected, targets,
             transition={{ duration: moving !== undefined ? 0.55 : 0.25, delay: moving !== undefined ? moving * MOVE_STAGGER : 0, ease: [0.25, 0.8, 0.3, 1] }}
             style={{ pointerEvents: 'none' }}
           >
-            <Checker seat={s.seat} glow={glow} chosen={chosen} />
+            <Checker seat={s.seat} colors={s.seat === 0 ? ck.light : ck.dark} glow={glow} chosen={chosen} />
             {s.i === s.n - 1 && s.n > 5 && !inTray && (
-              <UprightText x={0} y={0} dy={9} fontSize={25} fill={s.seat === 0 ? '#3b2f1a' : '#f4ead2'}>{s.n}</UprightText>
+              <UprightText x={0} y={0} dy={9} fontSize={25} fill={s.seat === 0 ? ck.light.text : ck.dark.text}>{s.n}</UprightText>
             )}
           </motion.g>
         );
@@ -284,11 +285,9 @@ function UprightText({ x, y, dy, fontSize, fill, opacity, children }: { x: numbe
 }
 
 /** One checker, drawn around (0, 0): soft shadow, turned body with grooves and a highlight. */
-function Checker({ seat, glow, chosen }: { seat: Seat; glow: boolean; chosen: boolean }) {
+function Checker({ seat, colors, glow, chosen }: { seat: Seat; colors: CheckerColors; glow: boolean; chosen: boolean }) {
   const light = seat === 0;
-  const rim = light ? '#8d7a52' : '#000';
-  const groove = light ? 'rgba(90,70,35,.35)' : 'rgba(0,0,0,.65)';
-  const ridge = light ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.13)';
+  const { rim, groove, ridge } = colors;
   const vertical = useContext(Upright);
   return (
     <g>
@@ -298,7 +297,7 @@ function Checker({ seat, glow, chosen }: { seat: Seat; glow: boolean; chosen: bo
       <circle r={R * 0.8 + 1.6} fill="none" stroke={ridge} strokeWidth={1} />
       <circle r={R * 0.42} fill="none" stroke={groove} strokeWidth={1.4} />
       <circle r={R * 0.42 + 1.3} fill="none" stroke={ridge} strokeWidth={0.8} />
-      <ellipse cx={-R * 0.3} cy={-R * 0.38} rx={R * 0.42} ry={R * 0.26} fill="url(#ck-shine)" opacity={light ? 0.9 : 0.5} />
+      <ellipse cx={-R * 0.3} cy={-R * 0.38} rx={R * 0.42} ry={R * 0.26} fill="url(#ck-shine)" opacity={colors.shine} />
       {(glow || chosen) && (
         <circle r={R + 2} fill="none" stroke="#ffd36a" strokeWidth={chosen ? 6 : 4} className={chosen ? undefined : 'nb-pulse'} style={chosen ? { filter: 'drop-shadow(0 0 6px #ffd36a)' } : undefined} />
       )}
