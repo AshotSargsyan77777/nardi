@@ -165,7 +165,9 @@ export class UsersController {
   @Public() @Get('leaderboard')
   leaderboard(@Query() q: any) {
     const p = page(q, 100);
-    return q.season === 'month' ? this.users.seasonLeaderboard(p.skip, p.take) : this.users.leaderboard(p.skip, p.take);
+    const variant = q.variant === 'short' || q.variant === 'long' ? q.variant : undefined;
+    if (variant) return this.users.seasonLeaderboard(p.skip, p.take, { month: q.season === 'month', variant });
+    return q.season === 'month' ? this.users.seasonLeaderboard(p.skip, p.take, { month: true }) : this.users.leaderboard(p.skip, p.take);
   }
 
   @Get('wallet')

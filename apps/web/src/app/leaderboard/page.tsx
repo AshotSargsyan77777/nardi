@@ -10,7 +10,11 @@ export default function LeaderboardPage() {
   const { t } = useI18n();
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'all' | 'month'>('month');
-  const { data } = useSWR<any>(tab === 'month' ? `/leaderboard?season=month&page=${page}&pageSize=50` : `/leaderboard?page=${page}&pageSize=50`);
+  const [variant, setVariant] = useState<'' | 'short' | 'long'>('');
+  const qs = `page=${page}&pageSize=50${tab === 'month' ? '&season=month' : ''}${variant ? `&variant=${variant}` : ''}`;
+  const { data } = useSWR<any>(`/leaderboard?${qs}`);
+  // the points table: this month, or all time for one variant
+  const pointsTable = tab === 'month' || !!variant;
   const tabCls = (on: boolean) => `rounded-full px-4 py-1.5 text-sm font-bold ${on ? 'bg-gold-grad text-ink-950' : 'bg-white/5 text-white/70'}`;
   return (
     <div>
@@ -19,18 +23,25 @@ export default function LeaderboardPage() {
         <button className={tabCls(tab === 'month')} onClick={() => { setTab('month'); setPage(1); }}>📅 {t('lb.month')}</button>
         <button className={tabCls(tab === 'all')} onClick={() => { setTab('all'); setPage(1); }}>⭐ {t('lb.allTime')}</button>
       </div>
-      {tab === 'month' && <p className="mb-3 text-xs text-white/45">{t('lb.monthNote')}</p>}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {(['', 'short', 'long'] as const).map((x) => (
+          <button key={x || 'all'} onClick={() => { setVariant(x); setPage(1); }} className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${variant === x ? 'bg-white/15 text-white ring-white/30' : 'bg-white/5 text-white/60 ring-white/10'}`}>
+            {x ? t(`variant.${x}`) : t('lb.allVariants')}
+          </button>
+        ))}
+      </div>
+      {pointsTable && <p className="mb-3 text-xs text-white/45">{tab === 'month' ? t('lb.monthNote') : t('lb.variantNote')}</p>}
       <Panel>
-        {tab === 'month' ? (!data ? <Loading /> : !data.items.length ? <Empty /> : (
+        {pointsTable ? (!data ? <Loading /> : !data.items.length ? <Empty /> : (
           <div className="overflow-x-auto">
             <table className="data">
-              <thead><tr><th>{t('lb.rank')}</th><th>{t('lb.player')}</th><th>{t('lb.points')}</th><th>{t('profile.wins')}</th><th>{t('profile.games')}</th></tr></thead>
+              <thead><tr><th>{t('lb.rank')}</th><th>{t('lb.player')}</th><th>{t('lb.points')}</th><th>{t('profile.wins')}</th><th>{t('profile.games')}</th><th>{t('profile.winRate')}</th></tr></thead>
               <tbody>
                 {data.items.map((p: any) => (
                   <tr key={p.nickname}>
                     <td className={`font-bold ${p.rank <= 3 ? 'text-gold-300' : 'text-white/50'}`}>{p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : p.rank}</td>
                     <td><Link href={`/u/${p.nickname}`} className="flex items-center gap-2 font-semibold hover:underline"><Avatar name={p.avatar} size={28} />{p.nickname}</Link></td>
-                    <td><Badge color="gold">{p.points}</Badge></td><td>{p.wins}</td><td>{p.games}</td>
+                    <td><Badge color="gold">{p.points}</Badge></td><td>{p.wins}</td><td>{p.games}</td><td>{p.winRate}%</td>
                   </tr>
                 ))}
               </tbody>

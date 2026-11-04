@@ -297,6 +297,13 @@ describe('NARDI API end-to-end', () => {
         const p = await quests.progress(u.id, new Date(0));
         expect([p.play, p.win, p.random, p.long]).toEqual([0, 0, 0, 0]);
       }
+      // per-variant table: the one who stayed is listed with a win, the one who left is not
+      const lb = (await request(app.getHttpServer()).get('/api/leaderboard?variant=long&season=month')).body;
+      const names = lb.items.map((r: any) => r.nickname);
+      expect(names).toContain(users[1].nickname);
+      expect(names).not.toContain(users[0].nickname);
+      expect(lb.items.find((r: any) => r.nickname === users[1].nickname).points).toBe(3);
+      expect((await request(app.getHttpServer()).get('/api/leaderboard?variant=short&season=month')).body.items.map((r: any) => r.nickname)).not.toContain(users[1].nickname);
       sockets.forEach((s) => s.close());
     });
   });

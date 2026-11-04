@@ -233,24 +233,33 @@ export class UsersService {
   }
 
   /**
-   * This month's table (Yerevan time): 3 points for a win, 1 for a finished match; practice games
-   * against bots do not count.
+   * Points table from finished matches (3 for a win, 1 for a played match; practice against bots
+   * does not count, nor does a match for the player who walked out of it). `month`: this month only
+   * (Yerevan time); `variant`: short or long nardi only.
    */
-  async seasonLeaderboard(skip: number, take: number) {
+  async seasonLeaderboard(skip: number, take: number, opts: { month?: boolean; variant?: 'short' | 'long' } = { month: true }) {
     const now = new Date(Date.now() + 4 * 3600_000);
-    const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 4 * 3600_000);
+    const since = opts.month ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 4 * 3600_000) : new Date(0);
+    const variantSql = opts.variant === 'long'
+      ? Prisma.sql`AND m.rules->>'variant' = 'long'`
+      : opts.variant === 'short' ? Prisma.sql`AND COALESCE(m.rules->>'variant', 'short') = 'short'` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<{ userId: string; points: bigint; wins: bigint; games: bigint }[]>`
       SELECT mp."userId", SUM(CASE WHEN mp.result = 'WIN' THEN 3 ELSE 1 END) AS points,
              SUM(CASE WHEN mp.result = 'WIN' THEN 1 ELSE 0 END) AS wins, COUNT(*) AS games
       FROM "MatchPlayer" mp JOIN "Match" m ON m.id = mp."matchId" JOIN "User" u ON u.id = mp."userId"
       WHERE mp."userId" IS NOT NULL AND m.status = 'FINISHED' AND m.mode <> 'PRACTICE' AND m."finishedAt" >= ${since}
+        AND NOT (COALESCE(m."finishReason", '') = 'forfeit' AND mp.result <> 'WIN') ${variantSql}
         AND u.status = 'ACTIVE' AND COALESCE(u.settings #>> '{privacy,showOnLeaderboard}', 'true') <> 'false'
       GROUP BY mp."userId" ORDER BY points DESC, wins DESC LIMIT ${take} OFFSET ${skip}`;
     const users = await this.prisma.user.findMany({ where: { id: { in: rows.map((r) => r.userId) } }, select: { id: true, nickname: true, avatar: true, rating: true, level: true } });
     const byId = new Map(users.map((u) => [u.id, u]));
     return {
-      season: now.toISOString().slice(0, 7),
-      items: rows.map((r, i) => ({ rank: skip + i + 1, ...byId.get(r.userId)!, points: Number(r.points), wins: Number(r.wins), games: Number(r.games) })),
+      season: opts.month ? now.toISOString().slice(0, 7) : null,
+      variant: opts.variant ?? null,
+      items: rows.map((r, i) => {
+        const { id: _id, ...u } = byId.get(r.userId)!;
+        return { rank: skip + i + 1, ...u, points: Number(r.points), wins: Number(r.wins), games: Number(r.games), winRate: Number(r.games) ? Math.round((Number(r.wins) / Number(r.games)) * 1000) / 10 : 0 };
+      }),
     };
   }
 
