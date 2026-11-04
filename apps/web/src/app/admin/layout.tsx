@@ -13,7 +13,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (me.role === 'USER') return <p className="py-20 text-center text-white/50">403</p>;
   const items = [
     ['/admin', '📊', t('admin.dashboard')], ['/admin/users', '👥', t('admin.users')], ['/admin/economy', '◉', t('admin.economy')],
-    ['/admin/games', '🎴', t('admin.games')], ['/admin/monitoring', '🛡️', t('admin.monitoring')],
+    ['/admin/games', '🎲', t('admin.games')], ['/admin/monitoring', '🛡️', t('admin.monitoring')],
     ['/admin/platform', '⚙️', t('admin.platform')], ['/admin/support', '💬', t('admin.support')],
   ];
   return (

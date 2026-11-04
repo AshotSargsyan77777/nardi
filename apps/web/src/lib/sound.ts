@@ -45,7 +45,7 @@ class SoundEngine {
   musicOn = true;
   sfxOn = true;
   theme: MusicTheme = 'jazz';
-  cardSound: CardSound = 'paper';
+  cardSound: CardSound = 'wood';
   private listeners = new Set<() => void>();
 
   constructor() {
@@ -317,25 +317,9 @@ class SoundEngine {
 
   // ---------- effects ----------
 
-  /** A card placed on the table, in the chosen style. */
+  /** Kept for old callers: the checker sound. */
   card() {
-    const ctx = this.ctx;
-    if (!ctx || !this.sfxOn) return;
-    const t = ctx.currentTime;
-    if (this.cardSound === 'paper') {
-      // a short paper swish and a soft knock
-      this.noiseBurst(t, 0.09, 'bandpass', 2600 + Math.random() * 600, 0.9, 0.35);
-      this.knock(t + 0.01, 140, 0.25, 0.08);
-    } else if (this.cardSound === 'wood') {
-      // a crisp tap on a wooden table
-      this.noiseBurst(t, 0.03, 'bandpass', 3500, 2, 0.4);
-      this.knock(t, 230, 0.45, 0.07);
-      this.knock(t + 0.002, 480, 0.15, 0.04);
-    } else {
-      // a muffled drop on green cloth
-      this.noiseBurst(t, 0.12, 'lowpass', 900, 0.7, 0.45);
-      this.knock(t + 0.01, 90, 0.3, 0.1);
-    }
+    this.checker();
   }
 
   /** Dice rattling in the hand and tumbling on the board. */
@@ -351,14 +335,26 @@ class SoundEngine {
     for (let i = 0; i < 3; i++) this.knock(t + 0.36 + i * 0.09 + Math.random() * 0.03, 260 + Math.random() * 120, 0.35 - i * 0.08, 0.06);
   }
 
-  /** A checker put down on the board. */
+  /** A checker put down on the board, in the chosen style. */
   checker() {
     const ctx = this.ctx;
     if (!ctx || !this.sfxOn) return;
     const t = ctx.currentTime;
-    this.noiseBurst(t, 0.03, 'bandpass', 2400, 2, 0.35);
-    this.knock(t, 300, 0.45, 0.06);
-    this.knock(t + 0.002, 650, 0.12, 0.03);
+    if (this.cardSound === 'paper') {
+      // bone / ivory checker: a bright, short click
+      this.noiseBurst(t, 0.02, 'bandpass', 4200, 3, 0.4);
+      this.knock(t, 900, 0.22, 0.03);
+      this.knock(t + 0.001, 420, 0.25, 0.05);
+    } else if (this.cardSound === 'wood') {
+      // a wooden checker on a wooden board
+      this.noiseBurst(t, 0.03, 'bandpass', 2400, 2, 0.35);
+      this.knock(t, 300, 0.45, 0.06);
+      this.knock(t + 0.002, 650, 0.12, 0.03);
+    } else {
+      // muffled, soft
+      this.noiseBurst(t, 0.08, 'lowpass', 900, 0.7, 0.35);
+      this.knock(t + 0.005, 140, 0.35, 0.09);
+    }
   }
 
   /** A short soft «pop» for a quick phrase / emoji. */

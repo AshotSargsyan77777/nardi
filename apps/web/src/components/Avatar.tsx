@@ -9,8 +9,8 @@ const AVATARS: Record<string, { icon: string; bg: string }> = {
   star: { icon: '⭐', bg: 'from-indigo-500 to-violet-800' },
   knight: { icon: '♞', bg: 'from-slate-500 to-slate-800' },
   queen: { icon: '♛', bg: 'from-rose-400 to-rose-700' },
-  ace: { icon: '♠', bg: 'from-emerald-500 to-emerald-800' },
-  jack: { icon: '🃏', bg: 'from-teal-400 to-cyan-800' },
+  ace: { icon: '🎲', bg: 'from-emerald-500 to-emerald-800' },
+  jack: { icon: '🏺', bg: 'from-teal-400 to-cyan-800' },
   bot: { icon: '🤖', bg: 'from-zinc-500 to-zinc-700' },
 };
 export const AVATAR_KEYS = Object.keys(AVATARS).filter((k) => k !== 'bot');

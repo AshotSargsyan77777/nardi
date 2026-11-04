@@ -59,7 +59,7 @@ export function MobileLobby() {
       <div className="flex flex-wrap items-center justify-center gap-2 pt-2 empty:hidden">
         {active?.matchId && (
           <Link href={`/match/${active.matchId}`} className="rounded-full bg-gold-400/15 px-4 py-1.5 text-sm font-bold text-gold-200 ring-1 ring-gold-400/40">
-            🎴 {t('home.activeMatch')} · {t('home.resume')} →
+            🎲 {t('home.activeMatch')} · {t('home.resume')} →
           </Link>
         )}
         <QuestsChip />

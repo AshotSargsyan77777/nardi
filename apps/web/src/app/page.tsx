@@ -112,7 +112,7 @@ function Dashboard() {
     <div className="space-y-5">
       {active?.matchId && (
         <Link href={`/match/${active.matchId}`} className="flex items-center justify-between rounded-2xl bg-gold-400/10 px-4 py-3 ring-1 ring-gold-400/30">
-          <span className="font-semibold text-gold-200">🎴 {t('home.activeMatch')}</span>
+          <span className="font-semibold text-gold-200">🎲 {t('home.activeMatch')}</span>
           <span className="text-sm font-bold text-gold-300">{t('home.resume')} →</span>
         </Link>
       )}

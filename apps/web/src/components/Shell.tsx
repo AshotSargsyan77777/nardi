@@ -198,7 +198,7 @@ function PhoneMenu({ onClose }: { onClose: () => void }) {
   const { refreshMe, config } = useApp();
   if (!me) return null;
   const items: [string, string, string][] = [
-    ['/', '🏠', t('nav.home')], ['/play', '🎴', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/invite', '🎁', t('invite.title')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
+    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/friends', '👥', t('nav.myFriends')], ['/invite', '🎁', t('invite.title')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/history', '📜', t('nav.history')],
     ['/wallet', '◉', t('nav.wallet')], ['/profile', '👤', t('nav.profile')], ['/profile/settings', '⚙️', t('nav.settings')],
     ['/rules', '📖', t('nav.rules')], ['/support', '💬', t('nav.support')],
     ...(me.role !== 'USER' ? [['/admin', '🛠️', t('nav.admin')] as [string, string, string]] : []),
@@ -251,7 +251,7 @@ export function MobileNav() {
   const path = usePathname();
   if (!me || path?.startsWith('/match/')) return null;
   const items = [
-    ['/', '🏠', t('nav.home')], ['/play', '🎴', t('nav.play')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/wallet', '◉', t('nav.wallet')], ['/profile', '👤', t('nav.profile')],
+    ['/', '🏠', t('nav.home')], ['/play', '🎲', t('nav.play')], ['/leaderboard', '🏆', t('nav.leaderboard')], ['/wallet', '◉', t('nav.wallet')], ['/profile', '👤', t('nav.profile')],
   ];
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-ink-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden phone:hidden">

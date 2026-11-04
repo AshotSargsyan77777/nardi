@@ -12,7 +12,7 @@ import { useApp, useRequireAuth } from '@/lib/app-state';
 import { fmtDate } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 
-const ACH_ICON: Record<string, string> = { FIRST_GAME: '🎴', FIRST_WIN: '🏆', TEN_WINS: '🔥', FIFTY_GAMES: '🎖️', KAPOT: '💥', FRIENDS_TABLE: '🤝', RATING_1400: '⭐', RATING_1600: '🌟' };
+const ACH_ICON: Record<string, string> = { FIRST_GAME: '🎲', FIRST_WIN: '🏆', TEN_WINS: '🔥', FIFTY_GAMES: '🎖️', MARS: '💥', FRIENDS_TABLE: '🤝', RATING_1400: '⭐', RATING_1600: '🌟' };
 
 export default function ProfilePage() {
   const { t, locale } = useI18n();

@@ -10,11 +10,11 @@ import { NICK_RE } from '../auth/auth.service';
 
 /** Cosmetic achievements — they never influence game rules, dealing or matchmaking odds. */
 export const ACHIEVEMENTS: { code: string; icon: string }[] = [
-  { code: 'FIRST_GAME', icon: '🎴' },
+  { code: 'FIRST_GAME', icon: '🎲' },
   { code: 'FIRST_WIN', icon: '🏆' },
   { code: 'TEN_WINS', icon: '🔥' },
   { code: 'FIFTY_GAMES', icon: '🎖️' },
-  { code: 'KAPOT', icon: '💥' },
+  { code: 'MARS', icon: '💥' },
   { code: 'FRIENDS_TABLE', icon: '🤝' },
   { code: 'RATING_1400', icon: '⭐' },
   { code: 'RATING_1600', icon: '🌟' },

@@ -35,7 +35,7 @@ export function useSoundPrefs() {
     music: s?.musicOn ?? true,
     sfx: s?.sfxOn ?? true,
     theme: s?.theme ?? 'jazz',
-    cardSound: s?.cardSound ?? 'paper',
+    cardSound: s?.cardSound ?? 'wood',
     toggleMusic: () => s?.toggleMusic(),
     toggleSfx: () => s?.toggleSfx(),
     setTheme: (x: MusicTheme) => {

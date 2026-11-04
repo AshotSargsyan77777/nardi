@@ -9,5 +9,4 @@ export const fmtDuration = (sec: number | null | undefined) => {
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 };
-export const SUIT_SYMBOL: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣' };
 export const isRed = (suit: string) => suit === 'H' || suit === 'D';
