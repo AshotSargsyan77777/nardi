@@ -1,7 +1,8 @@
 import { PushService } from '../common/push.service';
 import { BlocksService } from '../users/blocks.service';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { CHESS_CLOCKS, MatchmakingStatus } from '@nardi/engine';
+import { CHESS_CLOCKS, MatchmakingStatus, gameOf, seatCount } from '@nardi/engine';
+import { baseRules } from './rooms.service';
 import { randomInt, randomUUID } from 'crypto';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -28,6 +29,7 @@ export function parseQueue(raw: string): QueueMeta {
   const [base, v = 'short'] = raw.split('@');
   let rules: Record<string, unknown>;
   if (v === 'short' || v === 'long') rules = { game: 'nardi', variant: v };
+  else if (v === 'blot') rules = { game: 'blot' };
   else if (v === 'checkers') rules = { game: 'checkers' };
   else {
     const c = /^chess:(\d{1,2})\+(\d{1,2})$/.exec(v);
@@ -168,18 +170,19 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const meta = parseQueue(queue);
     const list = await this.entries(queue);
     const now = Date.now();
+    const size = seatCount(gameOf(meta.rules));
     let i = 0;
-    while (i + 2 <= list.length) {
-      const group = list.slice(i, i + 2);
+    while (i + size <= list.length) {
+      const group = list.slice(i, i + size);
       const waited = now - Math.min(...group.map((g) => g.joinedAt));
       const ratingSpread = Math.min(1500, 150 + 25 * Math.floor(waited / 5000));
       const levelSpread = 3 + Math.floor(waited / 10000);
-      const rs = group[1].rating - group[0].rating;
+      const rs = group[group.length - 1].rating - group[0].rating;
       const ls = Math.max(...group.map((g) => g.level)) - Math.min(...group.map((g) => g.level));
       // players who blocked each other are never put at one table
       if (rs <= ratingSpread && ls <= levelSpread && !(await this.blocks.anyBlocked(group.map((g) => g.userId)))) {
         await this.propose(meta, group);
-        i += 2;
+        i += size;
       } else i += 1;
     }
     if (meta.id.startsWith('casual@')) {
@@ -187,7 +190,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       const after = f.fillCasualWithBotsAfterSec * 1000;
       if (f.practiceBotsEnabled && after > 0) {
         const remaining = (await this.entries(queue)).sort((a, b) => a.joinedAt - b.joinedAt);
-        if (remaining.length && now - remaining[0].joinedAt >= after) await this.startWithBots(meta, remaining.slice(0, 1));
+        if (remaining.length && now - remaining[0].joinedAt >= after) await this.startWithBots(meta, remaining.slice(0, size - 1));
       }
     }
   }
@@ -227,13 +230,17 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   private async launch(p: Proposal) {
     clearTimeout(p.timer);
     this.proposals.delete(p.id);
-    // who plays white is decided by chance
-    const seats = randomInt(2) ? [p.entries[0], p.entries[1]] : [p.entries[1], p.entries[0]];
+    // who plays white (or who partners whom in blot) is decided by chance
+    const seats = [...p.entries];
+    for (let k = seats.length - 1; k > 0; k--) {
+      const j = randomInt(k + 1);
+      [seats[k], seats[j]] = [seats[j], seats[k]];
+    }
     try {
       const game = await this.settings.get('game');
       await this.stakes.assertAllowed(p.queue.currency, p.queue.stake, seats.map((s) => s.userId));
       const matchId = await this.matches.create({
-        mode: 'RANDOM', rules: { ...game.defaultRules, ...p.queue.rules }, stake: p.queue.stake, currency: p.queue.currency, ranked: p.queue.ranked, chatEnabled: true,
+        mode: 'RANDOM', rules: { ...baseRules(gameOf(p.queue.rules), game.defaultRules), ...p.queue.rules }, stake: p.queue.stake, currency: p.queue.currency, ranked: p.queue.ranked, chatEnabled: true,
         seats: seats.map((s) => ({ userId: s.userId })),
       });
       for (const e of p.entries) {
@@ -258,10 +265,10 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       await this.redis.del(UKEY(h.userId));
     }
     const seats: ({ userId: string } | { botName: string })[] = [];
-    for (let i = 0; i < 2; i++) seats.push(humans[i] ? { userId: humans[i].userId } : { botName: MatchService.botName(i) });
+    for (let i = 0; i < seatCount(gameOf(queue.rules)); i++) seats.push(humans[i] ? { userId: humans[i].userId } : { botName: MatchService.botName(i) });
     try {
       const game = await this.settings.get('game');
-      const matchId = await this.matches.create({ mode: 'RANDOM', rules: { ...game.defaultRules, ...queue.rules }, stake: 0, currency: 'FUN', ranked: false, chatEnabled: true, seats });
+      const matchId = await this.matches.create({ mode: 'RANDOM', rules: { ...baseRules(gameOf(queue.rules), game.defaultRules), ...queue.rules }, stake: 0, currency: 'FUN', ranked: false, chatEnabled: true, seats });
       for (const h of humans) this.realtime.toUser(h.userId, 'mm:status', { state: 'matched', queue: queue.id, since: null, proposal: null, matchId });
     } catch (e: any) {
       this.log.warn(`bot fill failed: ${e?.message}`);

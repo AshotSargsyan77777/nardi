@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { GameId, RoomDTO, RoomSettings, Seat, SeatInfo, gameOf, normalizeAnyRules } from '@nardi/engine';
+import { GameId, RoomDTO, RoomSettings, Seat, SeatInfo, gameOf, normalizeAnyRules, seatCount } from '@nardi/engine';
 import { Prisma, Room, RoomMember, RoomStatus, User } from '@prisma/client';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -44,7 +44,7 @@ export class RoomsService {
   }
 
   toDto(room: RoomFull): RoomDTO {
-    const seats: SeatInfo[] = [0, 1].map((seat) => {
+    const seats: SeatInfo[] = range(seatsOf(room)).map((seat) => {
       const m = room.members.find((x) => x.seat === seat);
       if (!m) return { seat: seat as Seat, userId: null, nickname: null, avatar: null, rating: null, level: null, isBot: false, connected: false, ready: false };
       return {
@@ -71,11 +71,12 @@ export class RoomsService {
     // hosts may only change rule keys the owner allows; everything else comes from defaults
     const kind = gameOf(s.rules);
     const editable = editableKeys(kind, game.hostEditableRules);
-    const rules: any = { ...game.defaultRules, game: kind };
+    const rules: any = { ...baseRules(kind, game.defaultRules), game: kind };
     for (const k of editable) if (k in s.rules) rules[k] = (s.rules as any)[k];
     const normalized: any = normalizeAnyRules(rules);
     if (kind === 'nardi' && !game.allowedTargetScores.includes(normalized.targetScore)) throw new AppError('BAD_RULES', 'Target score is not allowed');
-    if (kind !== 'chess' && !game.allowedTurnTimeouts.includes(normalized.turnTimeoutSec)) throw new AppError('BAD_RULES', 'Turn timer is not allowed');
+    if ((kind === 'nardi' || kind === 'checkers') && !game.allowedTurnTimeouts.includes(normalized.turnTimeoutSec)) throw new AppError('BAD_RULES', 'Turn timer is not allowed');
+    if (kind === 'blot' && !BLOT_TIMEOUTS.includes(normalized.turnTimeoutSec)) throw new AppError('BAD_RULES', 'Turn timer is not allowed');
     if (s.currency !== 'FUN') throw new AppError('BAD_CURRENCY', 'Unknown currency');
     s.stake = Number(s.stake ?? 0);
     if (s.stake > 0) {
@@ -118,7 +119,7 @@ export class RoomsService {
   private recomputeStatus(room: RoomFull): RoomStatus {
     if (['PLAYING', 'CANCELLED'].includes(room.status)) return room.status;
     if (room.status === 'FINISHED') return 'FINISHED';
-    const full = room.members.length === 2;
+    const full = room.members.length === seatsOf(room);
     const ready = room.members.every((m) => m.isBot || m.ready);
     return full && ready ? 'READY' : 'WAITING';
   }
@@ -143,7 +144,7 @@ export class RoomsService {
       await this.assertFree(userId);
       const s = room.settings as unknown as RoomSettings;
       if (s.stake > 0) await this.stakes.assertAllowed(s.currency, s.stake, [userId]);
-      const free = [0, 1].filter((x) => !room.members.some((m) => m.seat === x));
+      const free = range(seatsOf(room)).filter((x) => !room.members.some((m) => m.seat === x));
       const target = seat !== undefined && free.includes(seat) ? seat : free[0];
       if (target === undefined) throw new AppError('ROOM_FULL', 'Room is full', 409);
       try {
@@ -176,7 +177,7 @@ export class RoomsService {
       const me = room.members.find((m) => m.userId === userId);
       if (!me) throw new AppError('NOT_IN_ROOM', 'Join the room first', 403);
       if (room.members.some((m) => m.seat === seat)) throw new AppError('SEAT_TAKEN', 'Seat is taken', 409);
-      if (seat < 0 || seat > 1) throw new AppError('BAD_SEAT', 'Bad seat');
+      if (seat < 0 || seat >= seatsOf(room)) throw new AppError('BAD_SEAT', 'Bad seat');
       await this.prisma.roomMember.update({ where: { id: me.id }, data: { seat, ready: false } });
     });
   }
@@ -201,7 +202,7 @@ export class RoomsService {
       this.assertOpen(room);
       const s = room.settings as unknown as RoomSettings;
       if (!s.allowBots || s.stake > 0) throw new AppError('BOTS_NOT_ALLOWED', 'Bots are not allowed in this room', 403);
-      if (seat < 0 || seat > 1 || room.members.some((m) => m.seat === seat)) throw new AppError('SEAT_TAKEN', 'Seat is taken', 409);
+      if (seat < 0 || seat >= seatsOf(room) || room.members.some((m) => m.seat === seat)) throw new AppError('SEAT_TAKEN', 'Seat is taken', 409);
       const bots = room.members.filter((m) => m.isBot).length;
       await this.prisma.roomMember.create({ data: { roomId: room.id, isBot: true, botName: MatchService.botName(seat + bots), seat, ready: true } });
     });
@@ -226,6 +227,17 @@ export class RoomsService {
       const next = await this.validateSettings(input, room.settings as unknown as RoomSettings);
       if (next.stake > 0 && room.members.some((m) => m.isBot)) throw new AppError('BOTS_NOT_ALLOWED', 'Remove bots before setting a stake', 409);
       await this.prisma.room.update({ where: { id: room.id }, data: { settings: next as unknown as Prisma.InputJsonValue, status: 'WAITING' } });
+      // fewer seats now (blot → a two-player game): bots on the extra seats go, people move down if they can
+      const n = seatCount(gameOf(next.rules));
+      const taken = new Set(room.members.filter((m) => m.seat < n).map((m) => m.seat));
+      for (const m of room.members.filter((x) => x.seat >= n).sort((a, b) => Number(a.isBot) - Number(b.isBot))) {
+        const free = range(n).find((x) => !taken.has(x));
+        if (m.isBot || free === undefined) await this.prisma.roomMember.delete({ where: { id: m.id } });
+        else {
+          await this.prisma.roomMember.update({ where: { id: m.id }, data: { seat: free } });
+          taken.add(free);
+        }
+      }
       await this.prisma.roomMember.updateMany({ where: { roomId: room.id, isBot: false }, data: { ready: false } });
     });
   }
@@ -244,7 +256,7 @@ export class RoomsService {
       if (s.stake > 0) await this.stakes.assertAllowed(s.currency, s.stake, humans);
       const game = await this.settings.get('game');
       const matchId = await this.matches.create({
-        mode: 'PRIVATE', rules: { ...game.defaultRules, ...s.rules }, stake: s.stake, currency: s.currency, ranked: false, chatEnabled: s.chatEnabled, roomId: room.id,
+        mode: 'PRIVATE', rules: { ...baseRules(gameOf(s.rules), game.defaultRules), ...s.rules }, stake: s.stake, currency: s.currency, ranked: false, chatEnabled: s.chatEnabled, roomId: room.id,
         seats: ordered.map((m) => (m.userId ? { userId: m.userId } : { botName: m.botName ?? 'Bot' })),
       });
       await this.prisma.room.update({ where: { id: room.id }, data: { matchId } });
@@ -272,6 +284,17 @@ export class RoomsService {
 /** The rule keys a host may set for each game (nardi: as the owner allows). */
 export function editableKeys(kind: GameId, nardiKeys: string[]): string[] {
   if (kind === 'checkers') return ['botLevel', 'turnTimeoutSec'];
+  if (kind === 'blot') return ['targetScore', 'turnTimeoutSec', 'cardsBeforeBidding', 'dealStyle', 'botLevel', 'allowNoTrump', 'noTrumpDoubled', 'contraEnabled', 'recontraEnabled', 'allowKapotBid'];
   if (kind === 'chess') return ['botLevel', 'clockMin', 'clockInc'];
   return nardiKeys.filter((k) => k !== 'game');
 }
+
+export const BLOT_TIMEOUTS = [15, 30, 45, 60];
+/** The owner's default rules apply to nardi; the other games start from their own defaults. */
+export function baseRules(kind: GameId, nardiDefaults: object): Record<string, unknown> {
+  return kind === 'nardi' ? { ...nardiDefaults } : {};
+}
+
+const range = (n: number) => Array.from({ length: n }, (_, i) => i);
+/** How many seats a room has: four for blot, two for the other games. */
+const seatsOf = (room: { settings: unknown }) => seatCount(gameOf((room.settings as RoomSettings)?.rules ?? {}));

@@ -49,6 +49,9 @@ export interface MatchDTO<V = AnyView> {
   /** SHA-256 commitment of the current game's dice (revealed after the game). */
   diceCommitment: string | null;
   revealedDice: { game: number; rolls: [number, number][]; salt: string; commitment: string }[];
+  /** Blot: SHA-256 commitment of the current hand's deck; decks of finished hands with their salt. */
+  deckCommitment?: string | null;
+  revealedDecks?: { hand: number; deck: string[]; salt: string; commitment: string }[];
   events: AnyEvent[];
   /** The server's clock when this was sent (chess clocks run from it). */
   serverTime: number;

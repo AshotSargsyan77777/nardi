@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { Tournament } from '@prisma/client';
 import { randomInt } from 'crypto';
-import { GAME_KINDS, GameKind, kindOf, rulesForKind } from '@nardi/engine';
+import { GameKind, TOURNEY_KINDS, kindOf, rulesForKind } from '@nardi/engine';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { PushService } from '../common/push.service';
@@ -78,10 +78,11 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
     const exists = await this.prisma.tournament.findFirst({ where: { auto: true, startsAt } , select: { id: true } });
     if (exists) return;
     const day = Math.floor((startsAt.getTime() + TZ_OFFSET_H * 3600_000) / 86400_000);
-    await this.create({ name: 'daily', variant: GAME_KINDS[day % GAME_KINDS.length], targetScore: cfg.targetScore, maxPlayers: cfg.maxPlayers, prizes: cfg.prizes, startsAt, auto: true });
+    await this.create({ name: 'daily', variant: TOURNEY_KINDS[day % TOURNEY_KINDS.length], targetScore: cfg.targetScore, maxPlayers: cfg.maxPlayers, prizes: cfg.prizes, startsAt, auto: true });
   }
 
   async create(input: { name: string; variant: GameKind; targetScore: number; maxPlayers: number; prizes: number[]; startsAt: Date; auto?: boolean; minPlayers?: number }) {
+    if (!TOURNEY_KINDS.includes(input.variant)) throw new AppError('BAD_TOURNAMENT', 'This game has no knock-out tournaments');
     if (![4, 8, 16, 32].includes(input.maxPlayers)) throw new AppError('BAD_TOURNAMENT', 'maxPlayers: 4, 8, 16 or 32');
     if (!(input.startsAt instanceof Date) || Number.isNaN(input.startsAt.getTime()) || input.startsAt.getTime() < Date.now() + 60_000) throw new AppError('BAD_TOURNAMENT', 'The start must be at least a minute from now');
     const game = await this.settings.get('game');

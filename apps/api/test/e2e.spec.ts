@@ -170,6 +170,47 @@ describe('NARDI API end-to-end', () => {
     });
   });
 
+  describe('blot', () => {
+    it('plays a whole blot match with three bots: deals, commits decks, records team results', async () => {
+      const u = await registerUser(app);
+      const s = await connect(u);
+      const done = autoPlay(s);
+      const r = await post(u, '/api/matches/practice', { rules: { game: 'blot', targetScore: 51, botLevel: 'easy' } });
+      expect(r.status).toBe(201);
+      const first = (await u.agent.get(`/api/matches/${r.body.matchId}/state`)).body;
+      expect(first.view.game).toBe('blot');
+      expect(first.players).toHaveLength(4);
+      expect(first.view.myHand.length).toBeGreaterThan(0);
+      expect(first.deckCommitment).toMatch(/^[0-9a-f]{64}$/);
+      s.listeners('match:state').forEach((fn) => fn(first));
+      const final = await done;
+      expect(final.view.status).toBe('finished');
+      const m = await prismaOf(app).match.findUniqueOrThrow({ where: { id: r.body.matchId }, include: { players: true } });
+      expect(m.status).toBe('FINISHED');
+      expect(m.players).toHaveLength(4);
+      // partners share the result
+      const res = (seat: number) => m.players.find((p) => p.seat === seat)!.result;
+      expect(res(0)).toBe(res(2));
+      expect(res(1)).toBe(res(3));
+      expect(res(0)).not.toBe(res(1));
+      // every finished hand's deck is revealed and matches its commitment
+      const summary = (await u.agent.get(`/api/matches/${r.body.matchId}`)).body;
+      expect(summary.fairness.length).toBeGreaterThan(0);
+      expect(summary.fairness.every((f: any) => f.verified)).toBe(true);
+      s.close();
+    }, 240_000);
+
+    it('a blot room has four seats and goes back to two for chess', async () => {
+      const host = await registerUser(app);
+      const room = (await post(host, '/api/rooms', { rules: { game: 'blot', targetScore: 101 } })).body;
+      expect(room.seats).toHaveLength(4);
+      await post(host, `/api/rooms/${room.code}/bots`, { seat: 3 });
+      const changed = (await host.agent.patch(`/api/rooms/${room.code}/settings`).set('x-csrf-token', host.csrf).send({ rules: { game: 'chess', clockMin: 5, clockInc: 0 } })).body;
+      expect(changed.seats).toHaveLength(2);
+      expect(changed.seats.filter((x: any) => x.isBot)).toHaveLength(0);
+    });
+  });
+
   describe('chess and checkers', () => {
     for (const game of ['checkers', 'chess'] as const) {
       it(`plays a whole ${game} game against a bot`, async () => {

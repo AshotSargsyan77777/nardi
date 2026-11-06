@@ -16,6 +16,7 @@ export const ACHIEVEMENTS: { code: string; icon: string }[] = [
   { code: 'TEN_WINS', icon: '🔥' },
   { code: 'FIFTY_GAMES', icon: '🎖️' },
   { code: 'MARS', icon: '💥' },
+  { code: 'KAPOT', icon: '🃏' },
   { code: 'FRIENDS_TABLE', icon: '🤝' },
   { code: 'RATING_1400', icon: '⭐' },
   { code: 'RATING_1600', icon: '🌟' },
@@ -164,6 +165,8 @@ export class UsersService {
       shortWins: wins(by('short')),
       longMatches: by('long').length,
       longWins: wins(by('long')),
+      blotMatches: by('blot').length,
+      blotWins: wins(by('blot')),
       checkersMatches: by('checkers').length,
       checkersWins: wins(by('checkers')),
       checkersDraws: by('checkers').filter((x) => x.result === 'DRAW').length,
@@ -268,7 +271,7 @@ export class UsersService {
   }
 
   /** Called inside the match-finalisation transaction. */
-  async grantAchievements(tx: Tx, userId: string, ctx: { mars: boolean; privateMatch: boolean }) {
+  async grantAchievements(tx: Tx, userId: string, ctx: { mars: boolean; kapot?: boolean; privateMatch: boolean }) {
     const u = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     const earned: string[] = [];
     if (u.gamesPlayed >= 1) earned.push('FIRST_GAME');
@@ -276,6 +279,7 @@ export class UsersService {
     if (u.wins >= 10) earned.push('TEN_WINS');
     if (u.gamesPlayed >= 50) earned.push('FIFTY_GAMES');
     if (ctx.mars) earned.push('MARS');
+    if (ctx.kapot) earned.push('KAPOT');
     if (ctx.privateMatch) earned.push('FRIENDS_TABLE');
     if (u.rating >= 1400) earned.push('RATING_1400');
     if (u.rating >= 1600) earned.push('RATING_1600');
@@ -296,6 +300,7 @@ export function kindSql(kind?: GameKind | null) {
     case 'long': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi' AND m.rules->>'variant' = 'long'`;
     case 'checkers': return Prisma.sql`AND m.rules->>'game' = 'checkers'`;
     case 'chess': return Prisma.sql`AND m.rules->>'game' = 'chess'`;
+    case 'blot': return Prisma.sql`AND m.rules->>'game' = 'blot'`;
     default: return Prisma.empty;
   }
 }

@@ -58,6 +58,13 @@ export async function connect(u: TestUser): Promise<Socket> {
 export function autoActionFor(view: AnyView): any {
   const v = view as any;
   if (v.status !== 'playing' || v.seat === null || v.turn !== v.seat) return null;
+  if (v.game === 'blot') {
+    if (v.phase === 'bidding') {
+      const b = v.legal.bidding!;
+      return !v.contract && b.minBid !== null ? { type: 'bid', value: b.minBid, suit: v.myHand[0].slice(-1) } : { type: 'pass' };
+    }
+    return v.phase === 'playing' ? { type: 'play', card: v.legal.cards[0] } : null;
+  }
   if (v.game === 'checkers') return { type: 'move', move: v.legal[0].path };
   if (v.game === 'chess') return { type: 'move', move: v.legal[Math.floor(Math.random() * v.legal.length)] };
   if (v.phase === 'roll') return { type: 'roll' };

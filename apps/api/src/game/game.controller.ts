@@ -5,10 +5,10 @@ import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { SettingsService } from '../settings/settings.service';
-import { rollsCommitment } from './fairness';
+import { deckCommitment, rollsCommitment } from './fairness';
 import { MatchService } from './match.service';
-import { editableKeys } from './rooms.service';
-import { gameOf } from '@nardi/engine';
+import { baseRules, editableKeys } from './rooms.service';
+import { gameOf, seatCount } from '@nardi/engine';
 import { MatchmakingService } from './matchmaking.service';
 import { RoomsService } from './rooms.service';
 
@@ -20,7 +20,7 @@ class RoomSettingsDto {
   @IsOptional() @IsBoolean() allowBots?: boolean;
 }
 class JoinDto {
-  @IsOptional() @IsInt() @Min(0) @Max(1) seat?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(3) seat?: number;
 }
 class SeatDto {
   @IsInt() @Min(0) @Max(3) seat: number;
@@ -102,11 +102,12 @@ export class GameController {
     if (existing) return { matchId: existing, resumed: true };
     const game = await this.settings.get('game');
     const kind = gameOf(dto.rules ?? {});
-    const rules: any = { ...game.defaultRules, game: kind };
+    const rules: any = { ...baseRules(kind, game.defaultRules), game: kind };
     for (const k of editableKeys(kind, game.hostEditableRules)) if (dto.rules && k in dto.rules) rules[k] = dto.rules[k];
     const matchId = await this.matches.create({
       mode: 'PRACTICE', rules, stake: 0, currency: 'FUN', ranked: false, chatEnabled: false,
-      seats: [{ userId: u.id }, { botName: MatchService.botName(Math.floor(Math.random() * 8)) }],
+      // the player and bots for the other seats (blot: three bots, the partner opposite)
+      seats: [{ userId: u.id }, ...Array.from({ length: seatCount(kind) - 1 }, (_, i) => ({ botName: MatchService.botName(Math.floor(Math.random() * 8) + i) }))],
     });
     return { matchId, resumed: false };
   }
@@ -134,7 +135,8 @@ export class GameController {
       durationSec: m.durationSec, scores: [m.scoreTeam0, m.scoreTeam1], winnerTeam: m.winnerTeam, finishReason: m.finishReason, resultHash: m.resultHash,
       rules: m.rules, hands: st.engine?.history ?? [],
       players: m.players.sort((a, b) => a.seat - b.seat).map((p) => ({ seat: p.seat, team: p.team, nickname: p.user?.nickname ?? p.botName, avatar: p.user?.avatar ?? 'bot', isBot: p.isBot, result: p.result, ratingBefore: p.ratingBefore, ratingAfter: p.ratingAfter, xpGained: p.xpGained })),
-      fairness: (st.fairness ?? []).filter((f: any) => f.game !== currentGame).map((f: any) => ({ ...f, verified: rollsCommitment(f.salt, f.rolls) === f.commitment })),
+      // nardi dice (per game) or blot decks (per hand); the one in play stays hidden
+      fairness: (st.fairness ?? []).filter((f: any) => (f.deck ? f.hand : f.game) !== currentGame).map((f: any) => ({ ...f, verified: (f.deck ? deckCommitment(f.salt, f.deck) : rollsCommitment(f.salt, f.rolls)) === f.commitment })),
     };
   }
 

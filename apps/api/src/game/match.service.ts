@@ -3,8 +3,9 @@ import { BlocksService } from '../users/blocks.service';
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import {
   AnyAction, AnyEvent, AnyRules, AnyState, GameId, MatchActionPayload, MatchDTO, MatchState, Move, SEATS, Seat, SeatInfo, Team, actorOf, applyAny,
-  autoAny, botAny, clockDeadline, createAny, forfeitAny, gameOf, normalizeAnyRules, teamOf, turnOf, usesDice, viewAny,
+  autoAny, botAny, clockDeadline, createAny, forfeitAny, gameOf, normalizeAnyRules, seatCount, teamOfSeat, turnOf, usesDice, viewAny,
 } from '@nardi/engine';
+import * as Blot from '@nardi/engine/dist/blot';
 import { BotRunner } from './bot-runner';
 import { MatchMode, Prisma } from '@prisma/client';
 import { createHash, randomInt, randomUUID } from 'crypto';
@@ -17,7 +18,7 @@ import { Currency, LedgerService } from '../ledger/ledger.service';
 import { SettingsService } from '../settings/settings.service';
 import { ReferralsService } from '../users/referrals.service';
 import { UsersService, levelForXp } from '../users/users.service';
-import { Roll, commitRolls, eloDelta, secureRolls } from './fairness';
+import { Roll, commitDeck, commitRolls, eloDelta, secureRolls, secureShuffle, tableShuffle } from './fairness';
 import { RealtimeService } from './realtime.service';
 
 interface SeatPlayer {
@@ -34,7 +35,9 @@ interface SeatPlayer {
 interface FairnessRecord { game: number; rolls: Roll[]; salt: string; commitment: string; used: number }
 
 /** What is persisted in Match.state (server-private). */
-interface PersistedState { engine: AnyState; fairness: FairnessRecord[]; seq: number; strikes: number[]; leaverSeat: Seat | null }
+/** Blot: each hand's deck, committed before the deal. */
+interface DeckRecord { hand: number; deck: string[]; salt: string; commitment: string }
+interface PersistedState { engine: AnyState; fairness: (FairnessRecord | DeckRecord)[]; seq: number; strikes: number[]; leaverSeat: Seat | null }
 
 interface Runtime extends PersistedState {
   id: string;
@@ -89,6 +92,10 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     @Inject(ENV) private env: Env,
   ) {}
 
+  private team(rt: Runtime, seat: number) {
+    return teamOfSeat(gameOf(rt.engine), seat) as Team;
+  }
+
   static botName(i: number) {
     return BOT_NAMES[i % BOT_NAMES.length];
   }
@@ -104,7 +111,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   // ------------------------------------------------------------------ creation
 
   async create(input: CreateMatchInput): Promise<string> {
-    if (input.seats.length !== 2) throw new AppError('BAD_SEATS', 'A match needs exactly 2 seats');
+    const kind = gameOf(normalizeAnyRules(input.rules));
+    if (input.seats.length !== seatCount(kind)) throw new AppError('BAD_SEATS', `A match needs exactly ${seatCount(kind)} seats`);
     const rules = normalizeAnyRules(input.rules);
     const game = gameOf(rules);
     const humanIds = input.seats.filter((s): s is { userId: string } => 'userId' in s).map((s) => s.userId);
@@ -134,10 +142,23 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const matchId = randomUUID();
     const rolls = secureRolls();
     const { salt, commitment } = commitRolls(rolls);
-    const engine = createAny(rules, randomInt(2) as Seat);
+    let engine = createAny(rules, randomInt(seatCount(game)) as Seat);
+    let fairness: PersistedState['fairness'] = usesDice(game) ? [{ game: 1, rolls, salt, commitment, used: 0 }] : [];
+    let startEvents: AnyEvent[] = [];
+    let deckRow: { deck: string[]; salt: string; commitment: string } | null = null;
+    if (game === 'blot') {
+      // blot: the first deck is shuffled and committed now, then dealt
+      const deck = secureShuffle();
+      const c = commitDeck(deck);
+      const dealt = Blot.dealHand(engine as Blot.MatchState, deck as Blot.Card[]);
+      engine = dealt.state;
+      startEvents = dealt.events;
+      fairness = [{ hand: 1, deck, salt: c.salt, commitment: c.commitment }];
+      deckRow = { deck, ...c };
+    }
     const firstTurn = turnOf(engine);
-    // only nardi has dice: they are fixed and committed before the game starts
-    const persisted: PersistedState = { engine, fairness: usesDice(game) ? [{ game: 1, rolls, salt, commitment, used: 0 }] : [], seq: 0, strikes: [0, 0], leaverSeat: null };
+    // nardi: the dice are fixed and committed before the game starts
+    const persisted: PersistedState = { engine, fairness, seq: 0, strikes: Array(seatCount(game)).fill(0), leaverSeat: null };
     const stake = BigInt(input.stake);
 
     await this.prisma.$transaction(async (tx) => {
@@ -148,7 +169,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         },
       });
       for (const p of players) {
-        await tx.matchPlayer.create({ data: { matchId, seat: p.seat, team: teamOf(p.seat), userId: p.userId, isBot: p.isBot, botName: p.isBot ? p.nickname : null, ratingBefore: p.rating } });
+        await tx.matchPlayer.create({ data: { matchId, seat: p.seat, team: teamOfSeat(game, p.seat), userId: p.userId, isBot: p.isBot, botName: p.isBot ? p.nickname : null, ratingBefore: p.rating } });
       }
       if (stake > 0n) {
         for (const p of players) {
@@ -161,14 +182,16 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       }
       await this.appendEvents(tx, matchId, persisted, [
         { type: 'match_created', payload: { mode: input.mode, rules, stake: input.stake, currency: input.currency, seats: players.map((p) => ({ seat: p.seat, userId: p.userId, bot: p.isBot ? p.nickname : null })) } },
-        { type: 'game_started', payload: { game: 1, turn: firstTurn, ...(usesDice(game) ? { commitment } : {}) } },
+        deckRow
+          ? { type: 'hand_dealt', payload: { hand: 1, dealer: (engine as Blot.MatchState).dealer, ...deckRow } }
+          : { type: 'game_started', payload: { game: 1, turn: firstTurn, ...(usesDice(game) ? { commitment } : {}) } },
       ]);
     }, { timeout: 20000 });
 
     const rt: Runtime = {
       ...persisted, id: matchId, mode: input.mode, stake, currency: input.currency, ranked: input.ranked, chatEnabled: input.chatEnabled,
       roomId: input.roomId ?? null, players, startedAt: new Date(), deadline: null, timer: null, lock: Promise.resolve(), recentActions: new Map(),
-      lastEvents: [{ type: 'game_started', game: 1, turn: firstTurn as Seat }],
+      lastEvents: game === 'blot' ? startEvents : [{ type: 'game_started', game: 1, turn: firstTurn as Seat }],
     };
     this.runtimes.set(matchId, rt);
     if (stake > 0n) this.checkSharedIps(matchId, humanIds).catch(() => undefined);
@@ -248,6 +271,24 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const bot = rt.players.find((p) => p.isBot);
     if (!bot) return;
     let pool: string[] | null = null;
+    if (gameOf(rt.engine) === 'blot') {
+      // a reaction now and then to the end of a hand
+      const scored = events.find((e) => e.type === 'hand_scored') as { result: Blot.HandResult } | undefined;
+      if (!scored || scored.result.redeal || !scored.result.contract) return;
+      const r = scored.result;
+      const winners = r.awarded[0] >= r.awarded[1] ? 0 : 1;
+      const bots = rt.players.filter((p) => p.isBot);
+      if (!bots.length || Math.random() > 0.45) return;
+      const b = bots[Math.floor(Math.random() * bots.length)];
+      const won = b.seat % 2 === winners;
+      const bidders = r.contract!.seat % 2;
+      const pool = won
+        ? r.kapotTeam !== null ? ['🔥', 'taraq'] : r.made === false && b.seat % 2 !== bidders ? ['mnacin', '😎'] : ['taraq', '😎', '👏']
+        : ['vay', '😢', '🤔', 'apres'];
+      const id = pool[Math.floor(Math.random() * pool.length)];
+      setTimeout(() => void this.sendEmote(rt, b.seat, id), 900 + Math.random() * 900);
+      return;
+    }
     if (gameOf(rt.engine) !== 'nardi') {
       const over = events.find((e) => e.type === 'game_over') as { winner: Seat | null } | undefined;
       if (over) pool = over.winner === bot.seat ? ['😎', '👏'] : over.winner === null ? ['👏', '🤝'] : ['😢', '👏'];
@@ -292,7 +333,9 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   private buildDto(rt: Runtime, seat: Seat | null): MatchDTO {
     const s = rt.engine;
     const current = s.status === 'playing' ? s.handNumber : null;
-    const cur = rt.fairness.find((f) => f.game === current);
+    const nardiFair = rt.fairness.filter((f): f is FairnessRecord => 'rolls' in f);
+    const decks = rt.fairness.filter((f): f is DeckRecord => 'deck' in f);
+    const cur = nardiFair.find((f) => f.game === current);
     return {
       matchId: rt.id,
       mode: rt.mode,
@@ -307,7 +350,10 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       deadline: rt.deadline,
       diceCommitment: cur?.commitment ?? null,
       // a finished game's dice (the whole committed list; the first `used` were rolled) with the salt to check them
-      revealedDice: rt.fairness.filter((f) => f.game !== current).map((f) => ({ game: f.game, rolls: f.rolls, salt: f.salt, commitment: f.commitment })),
+      revealedDice: nardiFair.filter((f) => f.game !== current).map((f) => ({ game: f.game, rolls: f.rolls, salt: f.salt, commitment: f.commitment })),
+      // blot: the current hand's deck is only committed; finished hands' decks are revealed
+      deckCommitment: decks.find((f) => f.hand === current)?.commitment ?? null,
+      revealedDecks: decks.filter((f) => f.hand !== current).map((f) => ({ hand: f.hand, deck: f.deck, salt: f.salt, commitment: f.commitment })),
       events: rt.lastEvents,
       serverTime: Date.now(),
     };
@@ -377,7 +423,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       if (!player) throw new AppError('NOT_IN_MATCH', 'Not a player', 403);
       if (rt.engine.status !== 'playing') return;
       rt.leaverSeat = player.seat;
-      await this.applyForfeit(rt, teamOf(player.seat), { actorId: userId, source: 'leave' });
+      await this.applyForfeit(rt, this.team(rt, player.seat), { actorId: userId, source: 'leave' });
     });
   }
 
@@ -394,7 +440,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     if (game === 'nardi' && action.type === 'roll') {
       // the dice come from the list fixed (and committed) before the game started
       fairness = fairness.map((f) => ({ ...f }));
-      const rec = fairness.find((f) => f.game === rt.engine.handNumber);
+      const rec = fairness.find((f): f is FairnessRecord => 'rolls' in f && f.game === rt.engine.handNumber);
       if (rec && rec.used < rec.rolls.length) {
         action = { type: 'roll', dice: rec.rolls[rec.used] };
         rec.used += 1;
@@ -410,6 +456,17 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       { type: 'action', seat, payload: { action, version: rt.engine.version, ...meta } },
       ...res.events.map((e) => ({ type: e.type, seat: 'seat' in e ? (e as any).seat : undefined, payload: e })),
     ];
+    let nextState: AnyState = next;
+    if (game === 'blot' && next.status === 'playing' && (next as Blot.MatchState).awaitingDeal) {
+      const b = next as Blot.MatchState;
+      const deck = b.config.dealStyle === 'table' && b.collected?.length === 32 ? tableShuffle(b.collected) : secureShuffle();
+      const c = commitDeck(deck);
+      const dealt = Blot.dealHand(b, deck as Blot.Card[]);
+      nextState = dealt.state;
+      fairness = [...fairness, { hand: dealt.state.handNumber, deck, salt: c.salt, commitment: c.commitment }];
+      publicEvents.push(...dealt.events);
+      rows.push({ type: 'hand_dealt', payload: { hand: dealt.state.handNumber, dealer: dealt.state.dealer, deck, ...c } });
+    }
     if (game === 'nardi' && next.status === 'playing' && next.handNumber !== rt.engine.handNumber) {
       // a new game: fix its dice now; the finished game's dice are revealed
       const rolls = secureRolls();
@@ -417,7 +474,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       fairness = [...fairness, { game: next.handNumber, rolls, salt, commitment, used: 0 }];
       rows.push({ type: 'game_dice', payload: { game: next.handNumber, commitment } });
     }
-    await this.commit(rt, next, rows, publicEvents, fairness);
+    await this.commit(rt, nextState, rows, publicEvents, fairness);
   }
 
   /** Persist atomically with optimistic concurrency on Match.version, then update memory + clients. */
@@ -478,7 +535,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       if (game === 'nardi') {
         // roll after a short pause; then leave time to see the dice before the checkers move
         ms = (rt.engine as MatchState).game?.phase === 'move' ? Math.round(base * 2.2) + randomInt(Math.max(1, Math.round(base * 0.8))) : base + randomInt(Math.max(1, Math.round(base * 0.6)));
-      } else ms = Math.round(base * 0.6) + randomInt(Math.max(1, Math.round(base * 0.6)));
+      } else if (game === 'blot') ms = base + randomInt(Math.max(1, Math.round(base * 0.5)));
+      else ms = Math.round(base * 0.6) + randomInt(Math.max(1, Math.round(base * 0.6)));
       const botTimer = setTimeout(() => this.timed(rt, version, 'bot'), ms);
       if (clock === null) rt.timer = botTimer;
       return;
@@ -506,7 +564,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       if (seat === null) return;
       if (kind === 'bot') {
         // chess and checkers bots think in a worker thread so the server stays responsive
-        const action = gameOf(rt.engine) === 'nardi' ? botAny(rt.engine, seat) : await this.bots.think(rt.engine, seat);
+        const g = gameOf(rt.engine);
+        const action = g === 'nardi' || g === 'blot' ? botAny(rt.engine, seat) : await this.bots.think(rt.engine, seat);
         if (rt.engine.version !== version || rt.engine.status !== 'playing') return;
         await this.apply(rt, seat, action, { source: 'bot' });
         return;
@@ -516,7 +575,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       const offline = p.userId ? !this.realtime.isOnline(p.userId) : false;
       if ((offline && rt.strikes[seat] >= 3) || rt.strikes[seat] >= 6) {
         rt.leaverSeat = seat;
-        await this.applyForfeit(rt, teamOf(seat), { source: 'abandon', seat });
+        await this.applyForfeit(rt, this.team(rt, seat), { source: 'abandon', seat });
         return;
       }
       await this.apply(rt, seat, autoAny(rt.engine, seat), { source: 'timeout' });
@@ -543,7 +602,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const winner = s.winnerTeam;
     const draw = winner === null;
     const humans = rt.players.filter((p) => p.userId);
-    const winners = draw ? humans : humans.filter((p) => teamOf(p.seat) === winner);
+    const winners = draw ? humans : humans.filter((p) => this.team(rt, p.seat) === winner);
 
     if (rt.stake > 0n && humans.length) {
       const pot = rt.stake * BigInt(humans.length);
@@ -558,17 +617,18 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     }
 
     const ratingDelta = (seat: Seat) => {
-      if (!rt.ranked || humans.length !== 2) return 0;
-      const team = teamOf(seat);
-      const mine = rt.players.filter((p) => teamOf(p.seat) === team).map((p) => p.rating ?? 1200);
-      const theirs = rt.players.filter((p) => teamOf(p.seat) !== team).map((p) => p.rating ?? 1200);
+      if (!rt.ranked || humans.length !== rt.players.length) return 0;
+      const team = this.team(rt, seat);
+      const mine = rt.players.filter((p) => this.team(rt, p.seat) === team).map((p) => p.rating ?? 1200);
+      const theirs = rt.players.filter((p) => this.team(rt, p.seat) !== team).map((p) => p.rating ?? 1200);
       return eloDelta(mine, theirs, draw ? 0.5 : team === winner ? 1 : 0);
     };
     const marsWinners = new Set(((s.history ?? []) as { mars?: boolean; winner: number }[]).filter((h) => h.mars).map((h) => h.winner));
+    const kapotTeams = new Set(((s.history ?? []) as { kapotTeam?: number | null }[]).filter((h) => h.kapotTeam !== undefined && h.kapotTeam !== null).map((h) => h.kapotTeam));
     const length = gameOf(s) === 'nardi' ? (s.history ?? []).length : Math.min(15, Math.ceil(((s as any).game?.moves ?? (s as any).game?.sans?.length ?? 0) / 10));
 
     for (const p of humans) {
-      const won = !draw && teamOf(p.seat) === winner;
+      const won = !draw && this.team(rt, p.seat) === winner;
       const lost = !draw && !won;
       const user = await tx.user.findUniqueOrThrow({ where: { id: p.userId! } });
       const delta = ratingDelta(p.seat);
@@ -594,10 +654,10 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         where: { matchId_seat: { matchId: rt.id, seat: p.seat } },
         data: { result: won ? 'WIN' : draw ? 'DRAW' : ps.leaverSeat === p.seat ? 'ABANDON' : 'LOSS', ratingAfter: rating, ratingBefore: user.rating, xpGained },
       });
-      await this.users.grantAchievements(tx, user.id, { mars: marsWinners.has(p.seat), privateMatch: rt.mode === 'PRIVATE' });
+      await this.users.grantAchievements(tx, user.id, { mars: gameOf(s) === 'nardi' && marsWinners.has(p.seat), kapot: gameOf(s) === 'blot' && kapotTeams.has(this.team(rt, p.seat)), privateMatch: rt.mode === 'PRIVATE' });
     }
     for (const p of rt.players.filter((x) => x.isBot)) {
-      await tx.matchPlayer.update({ where: { matchId_seat: { matchId: rt.id, seat: p.seat } }, data: { result: draw ? 'DRAW' : teamOf(p.seat) === winner ? 'WIN' : 'LOSS' } });
+      await tx.matchPlayer.update({ where: { matchId_seat: { matchId: rt.id, seat: p.seat } }, data: { result: draw ? 'DRAW' : this.team(rt, p.seat) === winner ? 'WIN' : 'LOSS' } });
     }
   }
 
@@ -688,6 +748,20 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 function sanitizeAction(game: GameId, a: any): AnyAction {
   if (!a || typeof a !== 'object') throw new AppError('BAD_ACTION', 'Invalid action');
   const square = (v: any) => Number.isInteger(v) && v >= 0 && v < 64;
+  if (game === 'blot') {
+    switch (a.type) {
+      case 'pass': case 'contra': case 'recontra':
+        return { type: a.type };
+      case 'bid':
+        return a.value === 'kapot'
+          ? { type: 'bid', value: 'kapot', suit: String(a.suit) as any, plus: a.plus === undefined ? 0 : Number(a.plus) }
+          : { type: 'bid', value: Number(a.value), suit: String(a.suit) as any };
+      case 'play':
+        return { type: 'play', card: String(a.card) as Blot.Card, declare: true, ...(a.slap === true ? { slap: true } : {}) };
+      default:
+        throw new AppError('BAD_ACTION', 'Unknown action');
+    }
+  }
   if (game !== 'nardi') {
     switch (a.type) {
       case 'resign': case 'offer_draw': case 'accept_draw': case 'decline_draw':

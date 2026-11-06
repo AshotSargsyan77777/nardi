@@ -55,16 +55,25 @@ export interface GameSettings {
   tournaments: { daily: boolean; hour: number; maxPlayers: number; targetScore: number; prizes: number[] };
 }
 
-export interface EmotePhrase { id: string; group: 'play' | 'general'; hy: string; ru: string; en: string }
+/** `game`: shown only at that game's table (none = everywhere); `bazar`: blot bidding. */
+export interface EmotePhrase { id: string; group: 'play' | 'general' | 'bazar'; game?: string; hy: string; ru: string; en: string }
 export interface Emotes { phrases: EmotePhrase[]; emojis: string[] }
 
 export const DEFAULT_EMOTES: Emotes = {
   phrases: [
-    { id: 'zar', group: 'play', hy: 'Զառը գցի', ru: 'Бросай кости', en: 'Roll the dice' },
-    { id: 'gele', group: 'play', hy: 'Գելե՜', ru: 'Дубль!', en: 'Doubles!' },
-    { id: 'shesh_besh', group: 'play', hy: 'Շեշ-բեշ', ru: 'Шеш-беш', en: 'Six-five' },
-    { id: 'mars', group: 'play', hy: 'Մարս ես լինում', ru: 'Будет марс', en: "You're getting a mars" },
-    { id: 'bakht', group: 'play', hy: 'Բախտդ բերեց', ru: 'Повезло тебе', en: 'Lucky you' },
+    { id: 'zar', group: 'play', game: 'nardi', hy: 'Զառը գցի', ru: 'Бросай кости', en: 'Roll the dice' },
+    { id: 'gele', group: 'play', game: 'nardi', hy: 'Գելե՜', ru: 'Дубль!', en: 'Doubles!' },
+    { id: 'shesh_besh', group: 'play', game: 'nardi', hy: 'Շեշ-բեշ', ru: 'Шеш-беш', en: 'Six-five' },
+    { id: 'mars', group: 'play', game: 'nardi', hy: 'Մարս ես լինում', ru: 'Будет марс', en: "You're getting a mars" },
+    { id: 'bakht', group: 'play', game: 'nardi', hy: 'Բախտդ բերեց', ru: 'Повезло тебе', en: 'Lucky you' },
+    { id: 'lav_em', group: 'bazar', game: 'blot', hy: 'Լավ եմ', ru: 'Я пас', en: "I'm good" },
+    { id: 'khosa', group: 'bazar', game: 'blot', hy: 'Խոսա', ru: 'Говори', en: 'Your bid' },
+    { id: 'quansh', group: 'bazar', game: 'blot', hy: 'Քուանշ ա', ru: 'Куанш!', en: 'Quanche!' },
+    { id: 'sur', group: 'bazar', game: 'blot', hy: 'Սուր ա', ru: 'Сур!', en: 'Sur!' },
+    { id: 'jri', group: 'play', game: 'blot', hy: 'Ջրի', ru: 'Сбрасывай', en: 'Throw it' },
+    { id: 'taraq', group: 'play', game: 'blot', hy: 'Տարաք', ru: 'Взяли!', en: 'We got it' },
+    { id: 'mnacin', group: 'play', game: 'blot', hy: 'Մնացին', ru: 'Не сыграли!', en: 'They failed' },
+    { id: 'kaput', group: 'play', game: 'blot', hy: 'Կապուտ ենք անում', ru: 'Делаем капот', en: 'Going for kapot' },
     { id: 'wow', group: 'play', hy: 'Ինչ խաղացիր ա՜', ru: 'Вот это ход!', en: 'What a move!' },
     { id: 'barev', group: 'general', hy: 'Բարև 👋', ru: 'Привет 👋', en: 'Hi 👋' },
     { id: 'apres', group: 'general', hy: 'Ապրես', ru: 'Молодец', en: 'Well done' },
@@ -144,6 +153,12 @@ export class SettingsService implements OnModuleInit {
     for (const k of ['variant', 'botLevel'] as const) if (!next.game.hostEditableRules.includes(k)) next.game.hostEditableRules = [...next.game.hostEditableRules, k];
     next.game.hostEditableRules = next.game.hostEditableRules.filter((k) => k in DEFAULT_RULES);
     if (!next.game.emotes?.phrases) next.game.emotes = structuredClone(DEFAULT_EMOTES);
+    // phrases added for new games since the owner saved the list
+    for (const d of DEFAULT_EMOTES.phrases) {
+      const mine = next.game.emotes.phrases.find((x) => x.id === d.id);
+      if (!mine) next.game.emotes.phrases.push(structuredClone(d));
+      else if (d.game && !mine.game) mine.game = d.game;
+    }
     if (!Array.isArray(next.game.chatFilter)) next.game.chatFilter = [...DEFAULT_CHAT_FILTER];
     next.game.tournaments = { ...DEFAULT_SETTINGS.game.tournaments, ...(next.game.tournaments ?? {}) };
     this.cache = next;
@@ -214,7 +229,7 @@ export class SettingsService implements OnModuleInit {
           for (const p of e.phrases) {
             if (!p || !/^[a-z0-9_]{1,24}$/.test(p.id) || ids.has(p.id)) throw new AppError('BAD_SETTING', 'emotes.phrases[].id: unique, a-z 0-9 _');
             ids.add(p.id);
-            if (!['play', 'general'].includes(p.group)) throw new AppError('BAD_SETTING', 'emotes.phrases[].group: play | general');
+            if (!['play', 'general', 'bazar'].includes(p.group)) throw new AppError('BAD_SETTING', 'emotes.phrases[].group: play | general | bazar');
             for (const l of ['hy', 'ru', 'en']) if (!str(p[l], 40)) throw new AppError('BAD_SETTING', `emotes.phrases[].${l}: 1–40 characters`);
           }
           if (!Array.isArray(e.emojis) || e.emojis.length > 16 || !e.emojis.every((x: any) => str(x, 8))) throw new AppError('BAD_SETTING', 'emotes.emojis: up to 16 emojis');
