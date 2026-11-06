@@ -246,7 +246,7 @@ export class UsersService {
    * does not count, nor does a match for the player who walked out of it). `month`: this month only
    * (Yerevan time); `variant`: one game only (short / long nardi, checkers, chess).
    */
-  async seasonLeaderboard(skip: number, take: number, opts: { month?: boolean; variant?: GameKind } = { month: true }) {
+  async seasonLeaderboard(skip: number, take: number, opts: { month?: boolean; variant?: GameKind | 'nardi' } = { month: true }) {
     const now = new Date(Date.now() + 4 * 3600_000);
     const since = opts.month ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 4 * 3600_000) : new Date(0);
     const variantSql = kindSql(opts.variant);
@@ -294,8 +294,9 @@ export class UsersService {
 }
 
 /** SQL filter on Match `m` for one game kind (old nardi matches have no `game` in their rules). */
-export function kindSql(kind?: GameKind | null) {
+export function kindSql(kind?: GameKind | 'nardi' | null) {
   switch (kind) {
+    case 'nardi': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi'`;
     case 'short': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi' AND COALESCE(m.rules->>'variant', 'short') = 'short'`;
     case 'long': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi' AND m.rules->>'variant' = 'long'`;
     case 'checkers': return Prisma.sql`AND m.rules->>'game' = 'checkers'`;

@@ -11,7 +11,7 @@ import { Currency, LedgerService } from '../ledger/ledger.service';
 import { WalletService } from '../ledger/wallet.service';
 import { BlocksService } from './blocks.service';
 import { ReferralsService } from './referrals.service';
-import { QuestsService } from './quests.service';
+import { QuestsService, Section } from './quests.service';
 import { PushService } from '../common/push.service';
 import { ACHIEVEMENTS, AVATARS, UsersService } from './users.service';
 
@@ -125,14 +125,15 @@ export class UsersController {
     return this.referrals.summary(u.id);
   }
 
+  /** `?game=blot|nardi|checkers|chess`: each game has its own quests. */
   @Get('quests')
-  questList(@CurrentUser() u: AuthUser) {
-    return this.quests.list(u.id);
+  questList(@CurrentUser() u: AuthUser, @Query('game') game?: string) {
+    return this.quests.list(u.id, (game ?? 'nardi') as Section);
   }
 
   @Post('quests/:id/claim') @HttpCode(200)
-  questClaim(@CurrentUser() u: AuthUser, @Param('id') id: string) {
-    return this.quests.claim(u.id, id);
+  questClaim(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('game') game?: string) {
+    return this.quests.claim(u.id, (game ?? 'nardi') as Section, id);
   }
 
   @Get('users/me/stats')
@@ -166,7 +167,7 @@ export class UsersController {
   @Public() @Get('leaderboard')
   leaderboard(@Query() q: any) {
     const p = page(q, 100);
-    const variant = (GAME_KINDS as string[]).includes(q.variant) ? (q.variant as GameKind) : undefined;
+    const variant = (GAME_KINDS as string[]).includes(q.variant) || q.variant === 'nardi' ? (q.variant as GameKind | 'nardi') : undefined;
     if (variant) return this.users.seasonLeaderboard(p.skip, p.take, { month: q.season === 'month', variant });
     return q.season === 'month' ? this.users.seasonLeaderboard(p.skip, p.take, { month: true }) : this.users.leaderboard(p.skip, p.take);
   }

@@ -1,7 +1,7 @@
 'use client';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
-import { GAME_KINDS, GameKind, kindOf } from '@nardi/engine';
+import { GameKind, kindOf } from '@nardi/engine';
 import { DEFAULT_RULES as BLOT_DEFAULTS, RULE_LIMITS as BLOT_LIMITS } from '@nardi/engine/dist/blot';
 import { ClockPicker, KIND_ICON, kindRules } from './PlayActions';
 
@@ -43,14 +43,15 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
   const currencies = (['FUN'] as const).filter((c) => (g.stakeOptions[c] ?? []).length > 0);
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
-        {GAME_KINDS.map((v) => (
+      {/* only the variants of this game (short / long nardi); the game itself is chosen on the home page */}
+      {nardi && <div className="grid grid-cols-2 gap-2">
+        {(['short', 'long'] as const).map((v) => (
           <button key={v} type="button" disabled={disabled} onClick={() => setKind(v)} className={`rounded-2xl p-3 text-left ring-1 transition ${kind === v ? 'bg-gold-400/15 ring-gold-400/60' : 'bg-black/20 ring-white/10'}`}>
             <div className="font-bold">{KIND_ICON[v]} {t(`variant.${v}`)}</div>
             <div className="text-xs text-white/50">{t(`variant.${v}.sub`)}</div>
           </button>
         ))}
-      </div>
+      </div>}
       {kind === 'chess' && (
         <Field label={t('chess.clock')}>
           <ClockPicker clock={clock} onChange={(c) => { if (disabled) return; const [m, i] = c.split('+').map(Number); onChange({ ...value, rules: { ...value.rules, clockMin: m, clockInc: i } }); }} />

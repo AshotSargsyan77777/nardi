@@ -197,6 +197,13 @@ describe('NARDI API end-to-end', () => {
       const summary = (await u.agent.get(`/api/matches/${r.body.matchId}`)).body;
       expect(summary.fairness.length).toBeGreaterThan(0);
       expect(summary.fairness.every((f: any) => f.verified)).toBe(true);
+      // quests are per game: blot counts this match, nardi does not
+      const qs = app.get(QuestsService) as any;
+      expect((await qs.progress(u.id, new Date(0), 'blot')).play).toBe(1);
+      expect((await qs.progress(u.id, new Date(0), 'nardi')).play).toBe(0);
+      const list = (await u.agent.get('/api/quests?game=blot')).body;
+      expect(list.game).toBe('blot');
+      expect(list.quests).toHaveLength(3);
       s.close();
     }, 240_000);
 
@@ -504,7 +511,7 @@ describe('NARDI API end-to-end', () => {
       // a match someone walked out of does not count towards quests, for either player
       const quests = app.get(QuestsService) as any;
       for (const u of users) {
-        const p = await quests.progress(u.id, new Date(0));
+        const p = await quests.progress(u.id, new Date(0), 'nardi');
         expect([p.play, p.win, p.random, p.long]).toEqual([0, 0, 0, 0]);
       }
       // per-variant table: the one who stayed is listed with a win, the one who left is not

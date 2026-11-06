@@ -5,12 +5,15 @@ import useSWR from 'swr';
 import { Avatar } from '@/components/Avatar';
 import { Badge, Empty, Loading, PageTitle, Pager, Panel } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
+import { useSection } from '@/components/PlayActions';
 
 export default function LeaderboardPage() {
   const { t } = useI18n();
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'all' | 'month'>('month');
-  const [variant, setVariant] = useState<'' | 'blot' | 'short' | 'long' | 'checkers' | 'chess'>('');
+  const { section } = useSection();
+  const [picked, setVariant] = useState<string | null>(null);
+  const variant = picked ?? section;
   const qs = `page=${page}&pageSize=50${tab === 'month' ? '&season=month' : ''}${variant ? `&variant=${variant}` : ''}`;
   const { data } = useSWR<any>(`/leaderboard?${qs}`);
   // the points table: this month, or all time for one variant
@@ -24,9 +27,9 @@ export default function LeaderboardPage() {
         <button className={tabCls(tab === 'all')} onClick={() => { setTab('all'); setPage(1); }}>⭐ {t('lb.allTime')}</button>
       </div>
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {(['', 'blot', 'short', 'long', 'checkers', 'chess'] as const).map((x) => (
+        {(section === 'nardi' ? ['nardi', 'short', 'long'] : []).map((x) => (
           <button key={x || 'all'} onClick={() => { setVariant(x); setPage(1); }} className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${variant === x ? 'bg-white/15 text-white ring-white/30' : 'bg-white/5 text-white/60 ring-white/10'}`}>
-            {x ? t(`variant.${x}`) : t('lb.allVariants')}
+            {x === 'nardi' ? t('lb.allVariants') : t(`variant.${x}`)}
           </button>
         ))}
       </div>

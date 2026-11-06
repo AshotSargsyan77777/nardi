@@ -4,14 +4,17 @@ import useSWR from 'swr';
 import { api } from '@/lib/api';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
+import { useSection } from './PlayActions';
 import { Button, Coins, Modal, Panel } from './ui';
 
 interface QuestView { id: string; target: number; reward: number; progress: number; done: boolean; claimed: boolean }
 interface QuestsState { day: string; quests: QuestView[]; allDone: { reward: number; done: boolean; claimed: boolean }; weekly: QuestView }
 
+/** The quests of the game section the visitor is in. */
 export function useQuests() {
   const { me } = useApp();
-  return useSWR<QuestsState>(me ? '/quests' : null, { refreshInterval: 60_000 });
+  const { section } = useSection();
+  return useSWR<QuestsState>(me ? `/quests?game=${section}` : null, { refreshInterval: 60_000 });
 }
 
 /** Rewards waiting to be claimed (daily, all-done bonus, weekly). */
@@ -23,12 +26,13 @@ export function QuestsList() {
   const { t } = useI18n();
   const { refreshMe } = useApp();
   const { data, mutate } = useQuests();
+  const { section } = useSection();
   const [busy, setBusy] = useState<string | null>(null);
   if (!data) return null;
   const claim = async (id: string) => {
     setBusy(id);
     try {
-      await mutate(await api(`/quests/${id}/claim`, { method: 'POST' }), false);
+      await mutate(await api(`/quests/${id}/claim?game=${section}`, { method: 'POST' }), false);
       refreshMe();
     } finally {
       setBusy(null);

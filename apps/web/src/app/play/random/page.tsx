@@ -1,6 +1,7 @@
 'use client';
-import { GAME_KINDS, MatchmakingStatus } from '@nardi/engine';
-import { ClockPicker, KIND_ICON, queueSuffix, useChessClock, useVariant } from '@/components/PlayActions';
+import { MatchmakingStatus } from '@nardi/engine';
+import { SectionBar, SectionOptions } from '@/components/GameTiles';
+import { queueSuffix, useChessClock, useVariant } from '@/components/PlayActions';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -28,8 +29,8 @@ export default function RandomPage() {
   const { data: initial } = useSWR<MatchmakingStatus>(me ? '/matchmaking/status' : null);
   const [status, setStatus] = useState<MatchmakingStatus | null>(null);
   const [queue, setQueue] = useState('casual');
-  const [variant, setVariant] = useVariant();
-  const [clock, setClock] = useChessClock();
+  const [variant] = useVariant();
+  const [clock] = useChessClock();
   const [error, setError] = useState<string | null>(null);
   const st = status ?? initial ?? null;
   const now = useNow(st?.state === 'searching' || st?.state === 'proposal');
@@ -77,15 +78,7 @@ export default function RandomPage() {
         </Panel>
       ) : (
         <Panel title={t('random.chooseQueue')}>
-          <div className="mb-3 grid grid-cols-2 gap-2">
-            {GAME_KINDS.map((v) => (
-              <button key={v} onClick={() => setVariant(v)} className={`rounded-2xl p-3 text-left ring-1 transition ${variant === v ? 'bg-gold-400/15 ring-gold-400/60' : 'bg-black/20 ring-white/10'}`}>
-                <div className="font-bold">{KIND_ICON[v]} {t(`variant.${v}`)}</div>
-                <div className="text-xs text-white/50">{t(`variant.${v}.sub`)}</div>
-              </button>
-            ))}
-          </div>
-          {variant === 'chess' && <div className="mb-3"><ClockPicker clock={clock} onChange={setClock} /></div>}
+          <div className="mb-3 space-y-2"><SectionBar /><SectionOptions /></div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {queues.map((q) => (
               <button key={q.id} onClick={() => setQueue(q.id)} className={`flex items-center gap-3 rounded-2xl p-4 text-left ring-1 transition ${queue === q.id ? 'bg-gold-400/10 ring-gold-400/60' : 'bg-black/20 ring-white/10 hover:ring-white/25'}`}>

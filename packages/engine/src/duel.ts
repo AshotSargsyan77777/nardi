@@ -32,7 +32,7 @@ export type DuelAction<M> =
   | { type: 'flag'; at?: number };
 
 export type DuelEvent<M> =
-  | { type: 'moved'; seat: Seat; move: M; capture?: boolean; check?: boolean; san?: string }
+  | { type: 'moved'; seat: Seat; move: M; capture?: boolean; check?: boolean; san?: string; crowned?: boolean }
   | { type: 'draw_offered'; seat: Seat }
   | { type: 'draw_declined'; seat: Seat }
   | { type: 'game_over'; winner: Seat | null; reason: DuelFinish }

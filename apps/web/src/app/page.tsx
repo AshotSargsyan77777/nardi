@@ -5,11 +5,12 @@ import useSWR from 'swr';
 import { Avatar } from '@/components/Avatar';
 import { LogoMark, Rosette } from '@/components/Logo';
 import { InstallBanner } from '@/components/InstallApp';
-import { GameTiles } from '@/components/GameTiles';
+import { SectionBar, SectionOptions, SectionPicker } from '@/components/GameTiles';
+import { SectionArt } from '@/components/SectionArt';
 import { MobileLobby } from '@/components/MobileLobby';
 import { NextTournament } from '@/components/NextTournament';
 import { QuestsPanel } from '@/components/Quests';
-import { PlayModal, usePractice } from '@/components/PlayActions';
+import { PlayModal, usePractice, useSection } from '@/components/PlayActions';
 import { DiceArt } from '@/components/DiceArt';
 import { Badge, Button, Coins, Empty, Loading, Panel, StatusBadge } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -21,14 +22,15 @@ function Hero({ onPlay }: { onPlay: () => void }) {
   const { t } = useI18n();
   const { me } = useApp();
   const practice = usePractice();
+  const { section } = useSection();
   return (
     <section className="relative overflow-hidden rounded-3xl border border-gold-400/15 bg-gradient-to-br from-felt-800 via-felt-900 to-ink-900 p-6 shadow-soft sm:p-10">
       <svg className="pointer-events-none absolute -right-16 -top-16 h-72 w-72 opacity-[0.07]" viewBox="-20 -20 40 40" aria-hidden><Rosette cx={0} cy={0} r={18} fill="#eabd55" /></svg>
       <div className="relative grid items-center gap-8 lg:grid-cols-[1.2fr_1fr]">
         <div>
           {me && <p className="mb-2 text-sm font-semibold text-gold-300">{t('home.hello', { name: me.nickname })}</p>}
-          <h1 className="font-display text-3xl font-extrabold leading-tight sm:text-5xl">{t('home.heroTitle')}</h1>
-          <p className="mt-3 max-w-lg text-white/70">{t('home.heroText')}</p>
+          <h1 className="font-display text-3xl font-extrabold leading-tight sm:text-5xl">{t(`games.${section}`)}</h1>
+          <p className="mt-3 max-w-lg text-white/70">{t(`games.${section}.text`)}</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Button variant="gold" size="lg" onClick={onPlay} className="min-w-[160px] text-lg">▶ {t('home.play')}</Button>
             <Link href="/play/friends"><Button variant="emerald" size="lg">🤝 {t('home.playFriends')}</Button></Link>
@@ -37,8 +39,9 @@ function Hero({ onPlay }: { onPlay: () => void }) {
           </div>
           {practice.error && <p className="mt-2 text-sm text-ruby-400">{practice.error}</p>}
         </div>
-        <div className="relative">
-          <GameTiles compact />
+        <div className="relative flex flex-col items-center gap-4">
+          <SectionArt />
+          <SectionOptions />
         </div>
       </div>
     </section>
@@ -101,7 +104,8 @@ function Dashboard() {
   const { me, refreshMe } = useApp();
   const [playOpen, setPlayOpen] = useState(false);
   const { data: matches } = useSWR<any>('/users/me/matches?pageSize=5');
-  const { data: lb } = useSWR<any>('/leaderboard?pageSize=5');
+  const { section } = useSection();
+  const { data: lb } = useSWR<any>(`/leaderboard?pageSize=5&season=month&variant=${section}`);
   const { data: tx } = useSWR<any>('/users/me/transactions?pageSize=6');
   const { data: wallet, mutate: mutateWallet } = useSWR<any>('/wallet');
   const { data: active } = useSWR<{ matchId: string | null }>('/matches/active');
@@ -110,6 +114,7 @@ function Dashboard() {
 
   return (
     <div className="space-y-5">
+      <SectionBar />
       {active?.matchId && (
         <Link href={`/match/${active.matchId}`} className="flex items-center justify-between rounded-2xl bg-gold-400/10 px-4 py-3 ring-1 ring-gold-400/30">
           <span className="font-semibold text-gold-200">🎲 {t('home.activeMatch')}</span>
@@ -179,7 +184,7 @@ function Dashboard() {
                   <span className={`w-5 text-center font-bold ${p.rank <= 3 ? 'text-gold-300' : 'text-white/40'}`}>{p.rank}</span>
                   <Avatar name={p.avatar} size={28} />
                   <Link href={`/u/${p.nickname}`} className="min-w-0 flex-1 truncate text-sm font-semibold hover:underline">{p.nickname}</Link>
-                  <Badge color="gold">{p.rating}</Badge>
+                  <Badge color="gold">{p.points ?? p.rating}</Badge>
                 </li>
               ))}
             </ol>
@@ -211,7 +216,11 @@ function Dashboard() {
 
 export default function HomePage() {
   const { me } = useApp();
+  const { entered } = useSection();
   if (me === undefined) return <Loading />;
+  // every visit starts on the game picker; then the whole page is that game's
+  if (me && entered === false) return <SectionPicker />;
+  if (me && entered === null) return <Loading />;
   return (
     <>
       <div className={me ? 'phone:hidden' : ''}><InstallBanner /></div>

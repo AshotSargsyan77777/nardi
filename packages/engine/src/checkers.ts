@@ -211,7 +211,8 @@ export function applyCheckers(prev: CheckersState, seat: Seat, a: CheckersAction
   g.turn = other(seat);
   // a move answers a pending draw offer with «no»
   if (s.drawOffer !== null && s.drawOffer !== seat) s.drawOffer = null;
-  events.push({ type: 'moved', seat, move: m, capture: m.captures.length > 0 });
+  const crowned = !wasKing && Math.abs(g.board[m.path[m.path.length - 1]]) === 2;
+  events.push({ type: 'moved', seat, move: m, capture: m.captures.length > 0, ...(crowned ? { crowned: true } : {}) });
   const k = key(g.board, g.turn);
   g.seen[k] = (g.seen[k] ?? 0) + 1;
   if (!legalMoves(g.board, g.turn).length) finish(s, seat, 'no_moves', events);

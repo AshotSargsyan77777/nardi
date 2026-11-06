@@ -5,13 +5,16 @@ import { Badge, Empty, Loading, PageTitle, Panel } from '@/components/ui';
 import { useRequireAuth, useSocketEvent } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
 import { TourneyTime, tourneyName } from './shared';
+import { useSection } from '@/components/PlayActions';
 
 export default function TournamentsPage() {
   const { t, locale } = useI18n();
   const me = useRequireAuth();
   const { data, mutate } = useSWR<any>(me ? '/tournaments' : null, { refreshInterval: 30000 });
   useSocketEvent('tournament:update', () => mutate());
+  const { section } = useSection();
   if (!me || !data) return <Loading />;
+  const mine = (x: any) => (x.variant === 'short' || x.variant === 'long' ? 'nardi' : x.variant) === section;
   const card = (x: any) => (
     <Link key={x.id} href={`/tournaments/${x.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl bg-black/25 p-4 ring-1 ring-white/10 transition hover:bg-black/35">
       <div className="text-3xl">🏆</div>
@@ -30,8 +33,8 @@ export default function TournamentsPage() {
   return (
     <div className="space-y-5">
       <PageTitle sub={t('tourney.sub')}>🏆 {t('tourney.title')}</PageTitle>
-      <Panel title={t('tourney.upcoming')}>{data.open.length ? <div className="space-y-3">{data.open.map(card)}</div> : <Empty />}</Panel>
-      {data.recent.length > 0 && <Panel title={t('tourney.finished')}><div className="space-y-3">{data.recent.map(card)}</div></Panel>}
+      <Panel title={t('tourney.upcoming')}>{data.open.filter(mine).length ? <div className="space-y-3">{data.open.filter(mine).map(card)}</div> : <Empty />}</Panel>
+      {data.recent.filter(mine).length > 0 && <Panel title={t('tourney.finished')}><div className="space-y-3">{data.recent.filter(mine).map(card)}</div></Panel>}
     </div>
   );
 }

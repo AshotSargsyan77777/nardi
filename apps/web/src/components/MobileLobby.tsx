@@ -10,7 +10,11 @@ import { InstallBanner } from './InstallApp';
 import { QuestsChip } from './Quests';
 import { PushToggle } from './PushToggle';
 import { NextTournament } from './NextTournament';
-import { BotLevelPicker, ClockPicker, VariantPicker, usePractice } from './PlayActions';
+import { BotLevelPicker, Section, usePractice, useSection } from './PlayActions';
+import { SectionOptions } from './GameTiles';
+import { SectionArt } from './SectionArt';
+
+const ICON: Record<Section, string> = { blot: '🃏', nardi: '🎲', checkers: '⛀', chess: '♞' };
 import { DiceArt } from './DiceArt';
 
 type Mode = { key: string; title: string; sub: string; art: React.ReactNode; play: () => void; busy?: boolean };
@@ -23,15 +27,16 @@ export function MobileLobby() {
   const router = useRouter();
   const { config, refreshMe } = useApp();
   const practice = usePractice();
+  const { section, leave } = useSection();
   const { data: active } = useSWR<{ matchId: string | null }>('/matches/active');
   const { data: wallet, mutate: mutateWallet } = useSWR<any>('/wallet');
 
   const modes: Mode[] = [
     ...(config?.features.practiceBotsEnabled !== false
-      ? [{ key: 'practice', title: t('home.playFree'), sub: practice.error ?? t('home.playFreeSub'), art: <DiceArt a={6} b={5} />, play: practice.start, busy: practice.busy }]
+      ? [{ key: 'practice', title: t('home.playFree'), sub: practice.error ?? t('home.playFreeSub'), art: <><span className="text-6xl short:text-4xl">🤖</span><SectionArt small /></>, play: practice.start, busy: practice.busy }]
       : []),
-    { key: 'random', title: t('home.playRandom'), sub: t('home.playRandomSub'), art: <><span className="text-6xl short:text-4xl">⚡</span><DiceArt a={3} b={3} small /></>, play: () => router.push('/play/random') },
-    { key: 'friends', title: t('nav.friends'), sub: t('home.playFriendsSub'), art: <><span className="text-6xl short:text-4xl">🤝</span><DiceArt a={4} b={2} small /></>, play: () => router.push('/play/friends') },
+    { key: 'random', title: t('home.playRandom'), sub: t('home.playRandomSub'), art: <><span className="text-6xl short:text-4xl">⚡</span><SectionArt small /></>, play: () => router.push('/play/random') },
+    { key: 'friends', title: t('nav.friends'), sub: t('home.playFriendsSub'), art: <><span className="text-6xl short:text-4xl">🤝</span><SectionArt small /></>, play: () => router.push('/play/friends') },
   ];
   const start = modes.findIndex((m) => m.key === 'random');
   const [idx, setIdx] = useState(start);
@@ -63,6 +68,7 @@ export function MobileLobby() {
             🎲 {t('home.activeMatch')} · {t('home.resume')} →
           </Link>
         )}
+        <button onClick={leave} className="rounded-full bg-gold-400/15 px-4 py-1.5 text-sm font-bold text-gold-100 ring-1 ring-gold-400/40">{ICON[section]} {t(`games.${section}`)} · ⇄</button>
         <QuestsChip />
         <NextTournament chip />
         <Link href="/invite" className="rounded-full bg-white/5 px-4 py-1.5 text-sm font-bold text-gold-200 ring-1 ring-gold-400/30">🎁 {t('invite.title')}</Link>
@@ -110,8 +116,7 @@ export function MobileLobby() {
           {modes.map((m, i) => <span key={m.key} className={`h-1.5 rounded-full transition-all ${i === idx ? 'w-5 bg-gold-400' : 'w-1.5 bg-white/25'}`} />)}
         </div>
         {/* the game: used by every mode */}
-        <VariantPicker variant={practice.variant} onChange={practice.setVariant} />
-        {practice.variant === 'chess' && <ClockPicker clock={practice.clock} onChange={practice.setClock} />}
+        <SectionOptions />
         {cur.key === 'practice' ? (
           <div className="flex flex-wrap items-center justify-center gap-2">
             <BotLevelPicker level={practice.level} onChange={practice.setLevel} />

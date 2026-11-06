@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
 import { resetTips } from './game/Coach';
-import { GameTiles } from './GameTiles';
+import { SectionOptions } from './GameTiles';
 import { LinkCard, Modal } from './ui';
 
 export type BotLevel = 'easy' | 'medium' | 'strong';
@@ -183,8 +183,50 @@ export function PlayModal({ open, onClose }: { open: boolean; onClose: () => voi
   const { t } = useI18n();
   return (
     <Modal open={open} onClose={onClose} title={t('home.playSub')} wide>
-      <div className="mb-4"><GameTiles /></div>
+      <div className="mb-4"><SectionOptions /></div>
       <PlayModes compact />
     </Modal>
   );
+}
+
+/** The game section the visitor is in (blot, nardi, checkers or chess). */
+export type Section = 'blot' | 'nardi' | 'checkers' | 'chess';
+export const SECTIONS: Section[] = ['blot', 'nardi', 'checkers', 'chess'];
+export const sectionOf = (k: GameKind): Section => (k === 'short' || k === 'long' ? 'nardi' : k);
+const ENTERED_KEY = 'bb_entered';
+
+/**
+ * The section and whether the visitor has picked it in this visit: every new visit starts on the
+ * game picker; after a pick the whole site (play, quests, tournaments, leaderboard) is that game's.
+ */
+export function useSection() {
+  const [kind, setKind] = useVariant();
+  const [entered, setEntered] = useState<boolean | null>(null);
+  useEffect(() => {
+    const read = () => {
+      try {
+        setEntered(sessionStorage.getItem(ENTERED_KEY) === '1');
+      } catch {
+        setEntered(false);
+      }
+    };
+    read();
+    window.addEventListener('pref:section', read);
+    return () => window.removeEventListener('pref:section', read);
+  }, []);
+  const set = (on: boolean) => {
+    try {
+      if (on) sessionStorage.setItem(ENTERED_KEY, '1');
+      else sessionStorage.removeItem(ENTERED_KEY);
+    } catch {
+      /* ignore */
+    }
+    setEntered(on);
+    window.dispatchEvent(new Event('pref:section'));
+  };
+  const choose = (s: Section) => {
+    if (s !== sectionOf(kind)) setKind(s === 'nardi' ? 'short' : s);
+    set(true);
+  };
+  return { section: sectionOf(kind), entered, choose, leave: () => set(false) };
 }

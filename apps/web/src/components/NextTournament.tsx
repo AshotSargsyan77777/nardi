@@ -3,6 +3,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { TourneyTime, tourneyName } from '@/app/tournaments/shared';
 import { useApp } from '@/lib/app-state';
+import { useSection } from './PlayActions';
 import { useI18n } from '@/lib/i18n';
 
 /** The next tournament: a chip on phones, a banner on wider screens. */
@@ -10,7 +11,9 @@ export function NextTournament({ chip = false }: { chip?: boolean }) {
   const { t, locale } = useI18n();
   const { me } = useApp();
   const { data } = useSWR<any>(me ? '/tournaments' : null, { refreshInterval: 60000 });
-  const x = data?.open?.[0];
+  const { section } = useSection();
+  // only this game's tournaments
+  const x = data?.open?.find((o: any) => (o.variant === 'short' || o.variant === 'long' ? 'nardi' : o.variant) === section);
   if (!x) return null;
   if (chip) {
     return (
