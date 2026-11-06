@@ -66,14 +66,22 @@ export function autoActionFor(view: AnyView): any {
   return { type: 'move', moves };
 }
 
+/** Sends the auto action for this state; when the server says «too fast», tries again shortly. */
+export function sendAuto(s: Socket, d: MatchDTO, pick: (v: AnyView) => any = autoActionFor) {
+  const action = pick(d.view);
+  if (!action) return;
+  s.emitWithAck('match:action', { matchId: d.matchId, version: d.view.version, actionId: randomUUID(), action }).then((r: any) => {
+    if (r?.error?.code === 'RATE_LIMITED') setTimeout(() => sendAuto(s, d, pick), 300);
+  });
+}
+
 /** A naive but legal auto-player for any game. */
 export function autoPlay(s: Socket, onState?: (d: MatchDTO) => void) {
   const done = new Promise<MatchDTO>((resolve) => {
     s.on('match:state', (d: MatchDTO) => {
       onState?.(d);
       if (d.view.status === 'finished') return resolve(d);
-      const action = autoActionFor(d.view);
-      if (action) s.emit('match:action', { matchId: d.matchId, version: d.view.version, actionId: randomUUID(), action });
+      sendAuto(s, d);
     });
   });
   return done;

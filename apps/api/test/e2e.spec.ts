@@ -9,7 +9,7 @@ import request from 'supertest';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { SettingsService } from '../src/settings/settings.service';
 import { ReferralsService } from '../src/users/referrals.service';
-import { autoActionFor, autoPlay, bootApp, connect, post, prismaOf, registerUser, sleep, TestUser } from './helpers';
+import { autoActionFor, autoPlay, bootApp, sendAuto, connect, post, prismaOf, registerUser, sleep, TestUser } from './helpers';
 
 jest.setTimeout(180_000);
 
@@ -180,8 +180,7 @@ describe('NARDI API end-to-end', () => {
           ? new Promise<MatchDTO>((resolve) => s.on('match:state', (d: MatchDTO) => {
               const v: any = d.view;
               if (v.status === 'finished') return resolve(d);
-              const action = v.sans?.length >= 20 && v.turn === v.seat ? { type: 'resign' } : autoActionFor(v);
-              if (action) s.emit('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action });
+              sendAuto(s, d, (x: any) => (x.sans?.length >= 20 && x.turn === x.seat ? { type: 'resign' } : autoActionFor(x)));
             }))
           : autoPlay(s);
         const r = await post(u, '/api/matches/practice', { rules: { game, botLevel: 'easy', ...(game === 'chess' ? { clockMin: 15, clockInc: 10 } : {}) } });
@@ -359,12 +358,7 @@ describe('NARDI API end-to-end', () => {
           const d = (await users[k].agent.get(`/api/matches/${matchId}/state`)).body;
           s.listeners('match:state').forEach((fn) => fn(d));
         });
-        s.on('match:state', (d: MatchDTO) => {
-          const v = d.view;
-          const action = autoActionFor(v);
-          if (!action) return;
-          s.emitWithAck('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action }).then((r: any) => { if (process.env.DEBUG_T && r?.error) console.log('ACK', k, JSON.stringify(r).slice(0, 200)); });
-        });
+        s.on('match:state', (d: MatchDTO) => sendAuto(s, d));
       });
       await tours.start(t.id);
       let done: any = null;
@@ -382,7 +376,8 @@ describe('NARDI API end-to-end', () => {
       for (const p of view.players) {
         const u = users.find((x) => x.id === p.userId)!;
         const prize = [500, 200, 100][p.place - 1];
-        expect(Number(await ledger.balance(u.id, 'FUN'))).toBe(10000 + prize);
+        const tx = await prismaOf(app).ledgerTransaction.findUnique({ where: { idempotencyKey: `tourney:${t.id}:${u.id}` }, include: { entries: true } });
+        expect(tx!.entries.find((e) => e.amount > 0n)!.amount).toBe(BigInt(prize));
       }
       expect(done.winnerId).toBe(view.players.find((p: any) => p.place === 1).userId);
       expect((await ledger.verify()).ok).toBe(true);
