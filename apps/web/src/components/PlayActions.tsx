@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
 import { resetTips } from './game/Coach';
+import { GameTiles } from './GameTiles';
 import { LinkCard, Modal } from './ui';
 
 export type BotLevel = 'easy' | 'medium' | 'strong';
@@ -56,12 +57,18 @@ export const KIND_ICON: Record<GameKind, string> = { blot: '🃏', short: '🎲'
 function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T) {
   const [v, setV] = useState<T>(fallback);
   useEffect(() => {
-    try {
-      const x = localStorage.getItem(key);
-      if (x && (allowed as readonly string[]).includes(x)) setV(x as T);
-    } catch {
-      /* storage unavailable */
-    }
+    const read = () => {
+      try {
+        const x = localStorage.getItem(key);
+        if (x && (allowed as readonly string[]).includes(x)) setV(x as T);
+      } catch {
+        /* storage unavailable */
+      }
+    };
+    read();
+    // every picker on the page follows the latest choice
+    window.addEventListener(`pref:${key}`, read);
+    return () => window.removeEventListener(`pref:${key}`, read);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (x: T) => {
     setV(x);
@@ -70,6 +77,7 @@ function remembered<T extends string>(key: string, allowed: readonly T[], fallba
     } catch {
       /* ignore */
     }
+    window.dispatchEvent(new Event(`pref:${key}`));
   };
   return [v, set] as const;
 }
@@ -163,8 +171,6 @@ export function PlayModes({ compact = false }: { compact?: boolean }) {
       {config?.features.practiceBotsEnabled !== false && (
         <div className="space-y-2">
           <LinkCard onClick={practice.start} disabled={practice.busy} icon="🤖" title={t('home.playFree')} sub={practice.error ?? t('home.playFreeSub')} accent="emerald" />
-          <VariantPicker variant={practice.variant} onChange={practice.setVariant} />
-          {practice.variant === 'chess' && <ClockPicker clock={practice.clock} onChange={practice.setClock} />}
           <BotLevelPicker level={practice.level} onChange={practice.setLevel} />
           <button onClick={practice.learn} className="block w-full text-center text-xs font-semibold text-gold-300 hover:underline">🎓 {t('tip.learn')}</button>
         </div>
@@ -177,6 +183,7 @@ export function PlayModal({ open, onClose }: { open: boolean; onClose: () => voi
   const { t } = useI18n();
   return (
     <Modal open={open} onClose={onClose} title={t('home.playSub')} wide>
+      <div className="mb-4"><GameTiles /></div>
       <PlayModes compact />
     </Modal>
   );

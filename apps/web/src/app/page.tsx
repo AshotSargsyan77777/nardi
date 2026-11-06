@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import { Avatar } from '@/components/Avatar';
 import { LogoMark, Rosette } from '@/components/Logo';
 import { InstallBanner } from '@/components/InstallApp';
+import { GameTiles } from '@/components/GameTiles';
 import { MobileLobby } from '@/components/MobileLobby';
 import { NextTournament } from '@/components/NextTournament';
 import { QuestsPanel } from '@/components/Quests';
@@ -36,10 +37,8 @@ function Hero({ onPlay }: { onPlay: () => void }) {
           </div>
           {practice.error && <p className="mt-2 text-sm text-ruby-400">{practice.error}</p>}
         </div>
-        <div className="relative hidden h-56 lg:block">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <DiceArt a={6} b={6} />
-          </div>
+        <div className="relative">
+          <GameTiles compact />
         </div>
       </div>
     </section>

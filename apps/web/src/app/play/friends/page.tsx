@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
+import { kindRules, useChessClock, useVariant } from '@/components/PlayActions';
 import { RoomSettingsForm, RoomSettingsValue, defaultRoomSettings } from '@/components/RoomSettingsForm';
 import { Button, Empty, ErrorText, PageTitle, Panel, StatusBadge, inputCls } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -15,12 +16,18 @@ export default function FriendsPage() {
   const { config } = useApp();
   const router = useRouter();
   const [settings, setSettings] = useState<RoomSettingsValue | null>(null);
+  const [variant] = useVariant();
+  const [clock] = useChessClock();
   const [code, setCode] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const { data: rooms } = useSWR<any[]>(me ? '/rooms/mine' : null);
   useEffect(() => {
-    if (config && !settings) setSettings(defaultRoomSettings(config.game.defaultRules));
+    if (config && !settings) {
+      const base = defaultRoomSettings(config.game.defaultRules);
+      // start from the game picked on the home page
+      setSettings(variant === 'short' || variant === 'long' ? { ...base, rules: { ...base.rules, variant } } : { ...base, rules: kindRules(variant, clock) });
+    }
   }, [config, settings]);
 
   const create = async () => {
