@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { MatchDTO, viewMoveOptions } from '@nardi/engine';
+import { AnyView, MatchDTO, PlayerView, viewMoveOptions } from '@nardi/engine';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { io, Socket } from 'socket.io-client';
@@ -54,23 +54,26 @@ export async function connect(u: TestUser): Promise<Socket> {
   return s;
 }
 
-/** A naive but legal auto-player: rolls, then takes the first allowed step until the turn is complete. */
+/** A legal action for whoever is on move in this view, or null when it is not `view.seat`'s turn. */
+export function autoActionFor(view: AnyView): any {
+  const v = view as any;
+  if (v.status !== 'playing' || v.seat === null || v.turn !== v.seat) return null;
+  if (v.game === 'checkers') return { type: 'move', move: v.legal[0].path };
+  if (v.game === 'chess') return { type: 'move', move: v.legal[Math.floor(Math.random() * v.legal.length)] };
+  if (v.phase === 'roll') return { type: 'roll' };
+  const moves: any[] = [];
+  while (moves.length < v.movesRequired) moves.push(viewMoveOptions(v as PlayerView, moves)[0]);
+  return { type: 'move', moves };
+}
+
+/** A naive but legal auto-player for any game. */
 export function autoPlay(s: Socket, onState?: (d: MatchDTO) => void) {
   const done = new Promise<MatchDTO>((resolve) => {
     s.on('match:state', (d: MatchDTO) => {
       onState?.(d);
-      if (process.env.DEBUG_PLAY) console.log(`[seat ${d.view.seat}] v${d.view.version} phase=${d.view.phase} turn=${d.view.turn} status=${d.view.status}`);
-      const v = d.view;
-      if (v.status === 'finished') return resolve(d);
-      if (v.seat === null || v.turn !== v.seat) return;
-      let action: any;
-      if (v.phase === 'roll') action = { type: 'roll' };
-      else if (v.phase === 'move') {
-        const moves: any[] = [];
-        while (moves.length < v.movesRequired) moves.push(viewMoveOptions(v, moves)[0]);
-        action = { type: 'move', moves };
-      }
-      if (action) s.emit('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action });
+      if (d.view.status === 'finished') return resolve(d);
+      const action = autoActionFor(d.view);
+      if (action) s.emit('match:action', { matchId: d.matchId, version: d.view.version, actionId: randomUUID(), action });
     });
   });
   return done;

@@ -24,7 +24,7 @@ export function rollsCommitment(salt: string, rolls: Roll[]) {
   return createHash('sha256').update(`${salt}:${rolls.map((r) => r.join('')).join(',')}`).digest('hex');
 }
 
-export function eloDelta(teamA: number[], teamB: number[], scoreA: 0 | 1, k = 32) {
+export function eloDelta(teamA: number[], teamB: number[], scoreA: number, k = 32) {
   const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
   const ea = 1 / (1 + 10 ** ((avg(teamB) - avg(teamA)) / 400));
   return Math.round(k * (scoreA - ea));

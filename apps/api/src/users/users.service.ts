@@ -3,6 +3,7 @@ import { hasProfanity } from '../common/profanity';
 import { SettingsService } from '../settings/settings.service';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { GameKind, kindOf } from '@nardi/engine';
 import { AppError } from '../common/errors';
 import { PrismaService, Tx } from '../common/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -155,8 +156,7 @@ export class UsersService {
         if (p.dice.includes(6) && p.dice.includes(5)) st.sheshBesh += 1;
       }
     }
-    const variant = (r: any) => (r?.variant === 'long' ? 'long' : 'short');
-    const by = (v: string) => seats.filter((x) => variant(x.match.rules) === v);
+    const by = (v: string) => seats.filter((x) => kindOf(x.match.rules) === v);
     const wins = (xs: typeof seats) => xs.filter((x) => x.result === 'WIN').length;
     return {
       matches: seats.length,
@@ -164,6 +164,12 @@ export class UsersService {
       shortWins: wins(by('short')),
       longMatches: by('long').length,
       longWins: wins(by('long')),
+      checkersMatches: by('checkers').length,
+      checkersWins: wins(by('checkers')),
+      checkersDraws: by('checkers').filter((x) => x.result === 'DRAW').length,
+      chessMatches: by('chess').length,
+      chessWins: wins(by('chess')),
+      chessDraws: by('chess').filter((x) => x.result === 'DRAW').length,
       games: st.games,
       gamesWonPct: st.games ? Math.round((st.gamesWon / st.games) * 100) : 0,
       mars: st.mars,
@@ -235,14 +241,12 @@ export class UsersService {
   /**
    * Points table from finished matches (3 for a win, 1 for a played match; practice against bots
    * does not count, nor does a match for the player who walked out of it). `month`: this month only
-   * (Yerevan time); `variant`: short or long nardi only.
+   * (Yerevan time); `variant`: one game only (short / long nardi, checkers, chess).
    */
-  async seasonLeaderboard(skip: number, take: number, opts: { month?: boolean; variant?: 'short' | 'long' } = { month: true }) {
+  async seasonLeaderboard(skip: number, take: number, opts: { month?: boolean; variant?: GameKind } = { month: true }) {
     const now = new Date(Date.now() + 4 * 3600_000);
     const since = opts.month ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 4 * 3600_000) : new Date(0);
-    const variantSql = opts.variant === 'long'
-      ? Prisma.sql`AND m.rules->>'variant' = 'long'`
-      : opts.variant === 'short' ? Prisma.sql`AND COALESCE(m.rules->>'variant', 'short') = 'short'` : Prisma.empty;
+    const variantSql = kindSql(opts.variant);
     const rows = await this.prisma.$queryRaw<{ userId: string; points: bigint; wins: bigint; games: bigint }[]>`
       SELECT mp."userId", SUM(CASE WHEN mp.result = 'WIN' THEN 3 ELSE 1 END) AS points,
              SUM(CASE WHEN mp.result = 'WIN' THEN 1 ELSE 0 END) AS wins, COUNT(*) AS games
@@ -282,5 +286,16 @@ export class UsersService {
       await tx.notification.create({ data: { userId, type: 'achievement', title: 'achievement.unlocked', body: code, data: { code } } });
     }
     return fresh;
+  }
+}
+
+/** SQL filter on Match `m` for one game kind (old nardi matches have no `game` in their rules). */
+export function kindSql(kind?: GameKind | null) {
+  switch (kind) {
+    case 'short': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi' AND COALESCE(m.rules->>'variant', 'short') = 'short'`;
+    case 'long': return Prisma.sql`AND COALESCE(m.rules->>'game', 'nardi') = 'nardi' AND m.rules->>'variant' = 'long'`;
+    case 'checkers': return Prisma.sql`AND m.rules->>'game' = 'checkers'`;
+    case 'chess': return Prisma.sql`AND m.rules->>'game' = 'chess'`;
+    default: return Prisma.empty;
   }
 }

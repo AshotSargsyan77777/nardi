@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { Tournament } from '@prisma/client';
 import { randomInt } from 'crypto';
+import { GAME_KINDS, GameKind, kindOf, rulesForKind } from '@nardi/engine';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { PushService } from '../common/push.service';
@@ -77,14 +78,15 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
     const exists = await this.prisma.tournament.findFirst({ where: { auto: true, startsAt } , select: { id: true } });
     if (exists) return;
     const day = Math.floor((startsAt.getTime() + TZ_OFFSET_H * 3600_000) / 86400_000);
-    await this.create({ name: 'daily', variant: day % 2 ? 'long' : 'short', targetScore: cfg.targetScore, maxPlayers: cfg.maxPlayers, prizes: cfg.prizes, startsAt, auto: true });
+    await this.create({ name: 'daily', variant: GAME_KINDS[day % GAME_KINDS.length], targetScore: cfg.targetScore, maxPlayers: cfg.maxPlayers, prizes: cfg.prizes, startsAt, auto: true });
   }
 
-  async create(input: { name: string; variant: 'short' | 'long'; targetScore: number; maxPlayers: number; prizes: number[]; startsAt: Date; auto?: boolean; minPlayers?: number }) {
+  async create(input: { name: string; variant: GameKind; targetScore: number; maxPlayers: number; prizes: number[]; startsAt: Date; auto?: boolean; minPlayers?: number }) {
     if (![4, 8, 16, 32].includes(input.maxPlayers)) throw new AppError('BAD_TOURNAMENT', 'maxPlayers: 4, 8, 16 or 32');
     if (!(input.startsAt instanceof Date) || Number.isNaN(input.startsAt.getTime()) || input.startsAt.getTime() < Date.now() + 60_000) throw new AppError('BAD_TOURNAMENT', 'The start must be at least a minute from now');
     const game = await this.settings.get('game');
-    const rules = { ...game.defaultRules, variant: input.variant, targetScore: input.targetScore };
+    // chess tournaments play 5+0; nardi plays to the given score
+    const rules = rulesForKind(input.variant, game.defaultRules as any, input.variant === 'short' || input.variant === 'long' ? { targetScore: input.targetScore } : {});
     return this.prisma.tournament.create({
       data: {
         name: input.name.slice(0, 60), status: 'REGISTRATION', maxTeams: input.maxPlayers, rules: rules as any, startsAt: input.startsAt,
@@ -225,7 +227,9 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
       const p = bracket[t.round]?.find((x) => x.matchId === matchId);
       if (!p || p.winner) return;
       const byWinner = m.winnerTeam === null ? null : m.players.find((x) => x.seat === m.winnerTeam)?.userId ?? null;
-      p.winner = byWinner ?? (randomInt(2) ? p.a : p.b);
+      // a drawn chess or checkers game: black goes through (the «Armageddon» rule)
+      const black = m.players.find((x) => x.seat === 1)?.userId ?? null;
+      p.winner = byWinner ?? (m.status === 'FINISHED' && black ? black : randomInt(2) ? p.a : p.b);
       await this.prisma.tournament.update({ where: { id: tid }, data: { bracket: bracket as any } });
       this.notifyAll(tid, bracket);
       await this.progress(tid);
@@ -277,7 +281,7 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
     const mine = userId ? new Set((await this.prisma.tournamentEntry.findMany({ where: { userId, tournamentId: { in: [...open, ...recent].map((t) => t.id) } }, select: { tournamentId: true } })).map((e) => e.tournamentId)) : new Set<string>();
     const winners = await this.prisma.user.findMany({ where: { id: { in: recent.map((t) => t.winnerId).filter((x): x is string => !!x) } }, select: { id: true, nickname: true } });
     const view = (t: (typeof open)[number]) => ({
-      id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, finishedAt: t.finishedAt, variant: (t.rules as any)?.variant ?? 'short', targetScore: (t.rules as any)?.targetScore ?? 3,
+      id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, finishedAt: t.finishedAt, variant: kindOf(t.rules), targetScore: (t.rules as any)?.targetScore ?? 1,
       maxPlayers: t.maxTeams, players: t._count.entries, prizes: t.prizes, joined: mine.has(t.id), auto: t.auto,
       winner: winners.find((w) => w.id === t.winnerId)?.nickname ?? null,
     });
@@ -293,7 +297,7 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
     const live = bracket[t.round]?.find((p) => userId && (p.a === userId || p.b === userId) && p.matchId && !p.winner);
     return {
       id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, finishedAt: t.finishedAt, round: t.round, auto: t.auto,
-      variant: (t.rules as any)?.variant ?? 'short', targetScore: (t.rules as any)?.targetScore ?? 3, maxPlayers: t.maxTeams, minPlayers: t.minPlayers, prizes: t.prizes,
+      variant: kindOf(t.rules), targetScore: (t.rules as any)?.targetScore ?? 1, clock: (t.rules as any)?.game === 'chess' ? `${(t.rules as any).clockMin}+${(t.rules as any).clockInc}` : null, maxPlayers: t.maxTeams, minPlayers: t.minPlayers, prizes: t.prizes,
       joined: !!userId && people.has(userId), myMatchId: live?.matchId ?? null,
       players: t.entries.filter((e) => people.has(e.userId)).map((e) => ({ userId: e.userId, ...people.get(e.userId)!, place: e.place })),
       bracket,

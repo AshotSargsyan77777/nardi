@@ -1,7 +1,5 @@
 import { Seat } from './board';
-import { Action, GameEvent } from './game';
-import { RuleConfig } from './rules';
-import { PlayerView } from './view';
+import type { AnyAction, AnyEvent, AnyRules, AnyView } from './games';
 
 /** Shared WebSocket contract between the API (Socket.IO server) and the web client. */
 
@@ -20,7 +18,7 @@ export interface SeatInfo {
 }
 
 export interface RoomSettings {
-  rules: Partial<RuleConfig>;
+  rules: Partial<AnyRules> & { game?: string };
   stake: number;
   currency: 'FUN';
   chatEnabled: boolean;
@@ -38,20 +36,22 @@ export interface RoomDTO {
   inviteUrl: string;
 }
 
-export interface MatchDTO {
+export interface MatchDTO<V = AnyView> {
   matchId: string;
   mode: 'PRIVATE' | 'RANDOM' | 'PRACTICE' | 'TOURNAMENT';
   stake: number;
   currency: 'FUN';
   chatEnabled: boolean;
   players: SeatInfo[];
-  view: PlayerView;
+  view: V;
   /** Unix ms deadline for the current turn, or null. */
   deadline: number | null;
   /** SHA-256 commitment of the current game's dice (revealed after the game). */
   diceCommitment: string | null;
   revealedDice: { game: number; rolls: [number, number][]; salt: string; commitment: string }[];
-  events: GameEvent[];
+  events: AnyEvent[];
+  /** The server's clock when this was sent (chess clocks run from it). */
+  serverTime: number;
 }
 
 export interface MatchActionPayload {
@@ -60,7 +60,7 @@ export interface MatchActionPayload {
   version: number;
   /** Client generated unique id, used for idempotency of re-sent actions. */
   actionId: string;
-  action: Action;
+  action: AnyAction;
 }
 
 export interface ChatMessageDTO {
@@ -72,7 +72,7 @@ export interface ChatMessageDTO {
   at: number;
 }
 
-/** `casual`, `ranked` or `fun:<stake>`, then `@short` or `@long`. */
+/** `casual`, `ranked` or `fun:<stake>`, then `@short`, `@long`, `@checkers` or `@chess:<min>+<inc>`. */
 export type QueueId = string;
 
 export interface MatchmakingStatus {

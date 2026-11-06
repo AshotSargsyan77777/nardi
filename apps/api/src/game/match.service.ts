@@ -2,9 +2,10 @@ import { PushService } from '../common/push.service';
 import { BlocksService } from '../users/blocks.service';
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import {
-  Action, GameEvent, MatchActionPayload, MatchDTO, MatchState, Move, RuleConfig, SEATS, Seat, SeatInfo, Team, applyAction,
-  autoAction, botAction, createMatch as engineCreate, forfeit, normalizeRules, playerView, teamOf, whoseTurn,
+  AnyAction, AnyEvent, AnyRules, AnyState, GameId, MatchActionPayload, MatchDTO, MatchState, Move, SEATS, Seat, SeatInfo, Team, actorOf, applyAny,
+  autoAny, botAny, clockDeadline, createAny, forfeitAny, gameOf, normalizeAnyRules, teamOf, turnOf, usesDice, viewAny,
 } from '@nardi/engine';
+import { BotRunner } from './bot-runner';
 import { MatchMode, Prisma } from '@prisma/client';
 import { createHash, randomInt, randomUUID } from 'crypto';
 import { AuditService } from '../common/audit.service';
@@ -33,7 +34,7 @@ interface SeatPlayer {
 interface FairnessRecord { game: number; rolls: Roll[]; salt: string; commitment: string; used: number }
 
 /** What is persisted in Match.state (server-private). */
-interface PersistedState { engine: MatchState; fairness: FairnessRecord[]; seq: number; strikes: number[]; leaverSeat: Seat | null }
+interface PersistedState { engine: AnyState; fairness: FairnessRecord[]; seq: number; strikes: number[]; leaverSeat: Seat | null }
 
 interface Runtime extends PersistedState {
   id: string;
@@ -49,12 +50,12 @@ interface Runtime extends PersistedState {
   timer: NodeJS.Timeout | null;
   lock: Promise<unknown>;
   recentActions: Map<string, number>;
-  lastEvents: GameEvent[];
+  lastEvents: AnyEvent[];
 }
 
 export interface CreateMatchInput {
   mode: MatchMode;
-  rules: Partial<RuleConfig>;
+  rules: Partial<AnyRules> & { game?: string };
   stake: number;
   currency: Currency;
   ranked: boolean;
@@ -84,6 +85,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     private audit: AuditService,
     private blocks: BlocksService,
     private push: PushService,
+    private bots: BotRunner,
     @Inject(ENV) private env: Env,
   ) {}
 
@@ -103,7 +105,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
   async create(input: CreateMatchInput): Promise<string> {
     if (input.seats.length !== 2) throw new AppError('BAD_SEATS', 'A match needs exactly 2 seats');
-    const rules = normalizeRules(input.rules);
+    const rules = normalizeAnyRules(input.rules);
+    const game = gameOf(rules);
     const humanIds = input.seats.filter((s): s is { userId: string } => 'userId' in s).map((s) => s.userId);
     if (new Set(humanIds).size !== humanIds.length) throw new AppError('BAD_SEATS', 'A player cannot take two seats');
     if (input.stake > 0 && humanIds.length !== 2) throw new AppError('BOTS_NOT_ALLOWED', 'Bots cannot play in matches with stakes');
@@ -131,8 +134,10 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     const matchId = randomUUID();
     const rolls = secureRolls();
     const { salt, commitment } = commitRolls(rolls);
-    const engine = engineCreate(rules, randomInt(2) as Seat);
-    const persisted: PersistedState = { engine, fairness: [{ game: 1, rolls, salt, commitment, used: 0 }], seq: 0, strikes: [0, 0], leaverSeat: null };
+    const engine = createAny(rules, randomInt(2) as Seat);
+    const firstTurn = turnOf(engine);
+    // only nardi has dice: they are fixed and committed before the game starts
+    const persisted: PersistedState = { engine, fairness: usesDice(game) ? [{ game: 1, rolls, salt, commitment, used: 0 }] : [], seq: 0, strikes: [0, 0], leaverSeat: null };
     const stake = BigInt(input.stake);
 
     await this.prisma.$transaction(async (tx) => {
@@ -156,14 +161,14 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       }
       await this.appendEvents(tx, matchId, persisted, [
         { type: 'match_created', payload: { mode: input.mode, rules, stake: input.stake, currency: input.currency, seats: players.map((p) => ({ seat: p.seat, userId: p.userId, bot: p.isBot ? p.nickname : null })) } },
-        { type: 'game_started', payload: { game: 1, turn: engine.game!.turn, commitment } },
+        { type: 'game_started', payload: { game: 1, turn: firstTurn, ...(usesDice(game) ? { commitment } : {}) } },
       ]);
     }, { timeout: 20000 });
 
     const rt: Runtime = {
       ...persisted, id: matchId, mode: input.mode, stake, currency: input.currency, ranked: input.ranked, chatEnabled: input.chatEnabled,
       roomId: input.roomId ?? null, players, startedAt: new Date(), deadline: null, timer: null, lock: Promise.resolve(), recentActions: new Map(),
-      lastEvents: [{ type: 'game_started', game: 1, turn: engine.game!.turn }],
+      lastEvents: [{ type: 'game_started', game: 1, turn: firstTurn as Seat }],
     };
     this.runtimes.set(matchId, rt);
     if (stake > 0n) this.checkSharedIps(matchId, humanIds).catch(() => undefined);
@@ -207,7 +212,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     try {
       const newMatchId = await this.create({
         mode: rt.mode, rules: rt.engine.config, stake: Number(rt.stake), currency: rt.currency, ranked: rt.ranked, chatEnabled: rt.chatEnabled,
-        seats: rt.players.map((p) => (p.userId ? { userId: p.userId } : { botName: p.nickname })),
+        // chess and checkers: swap colours for the next game
+        seats: (gameOf(rt.engine) === 'nardi' ? rt.players : [...rt.players].reverse()).map((p) => (p.userId ? { userId: p.userId } : { botName: p.nickname })),
       });
       tell({ newMatchId });
       return { ok: true, newMatchId };
@@ -238,12 +244,20 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Bots now and then react (a lucky roll, the end of a game), so practice games feel alive. */
-  private botReactions(rt: Runtime, events: GameEvent[]) {
+  private botReactions(rt: Runtime, events: AnyEvent[]) {
     const bot = rt.players.find((p) => p.isBot);
     if (!bot) return;
     let pool: string[] | null = null;
-    const won = events.find((e) => e.type === 'game_won') as Extract<GameEvent, { type: 'game_won' }> | undefined;
-    const rolled = events.find((e) => e.type === 'rolled') as Extract<GameEvent, { type: 'rolled' }> | undefined;
+    if (gameOf(rt.engine) !== 'nardi') {
+      const over = events.find((e) => e.type === 'game_over') as { winner: Seat | null } | undefined;
+      if (over) pool = over.winner === bot.seat ? ['😎', '👏'] : over.winner === null ? ['👏', '🤝'] : ['😢', '👏'];
+      if (!pool || Math.random() > 0.55) return;
+      const id = pool[Math.floor(Math.random() * pool.length)];
+      setTimeout(() => void this.sendEmote(rt, bot.seat, id), 700 + Math.random() * 900);
+      return;
+    }
+    const won = events.find((e) => e.type === 'game_won') as { result: { winner: Seat; mars: boolean } } | undefined;
+    const rolled = events.find((e) => e.type === 'rolled') as { seat: Seat; dice: [number, number] } | undefined;
     if (won) pool = won.result.winner === bot.seat ? (won.result.mars ? ['mars', '🔥', '😎'] : ['😎', 'apres', '👏']) : ['vay', '😢', 'bakht', 'apres'];
     else if (rolled && rolled.seat !== bot.seat && rolled.dice[0] === rolled.dice[1] && Math.random() < 0.5) pool = ['bakht', 'gele', '🤔'];
     else if (rolled && rolled.seat === bot.seat && rolled.dice[0] === rolled.dice[1] && Math.random() < 0.3) pool = ['gele', '🔥'];
@@ -262,7 +276,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
   activeSummaries() {
     return [...this.runtimes.values()].filter((r) => r.engine.status === 'playing').map((r) => ({
-      id: r.id, mode: r.mode, stake: Number(r.stake), currency: r.currency, startedAt: r.startedAt, scores: r.engine.scores, hand: r.engine.handNumber,
+      id: r.id, game: gameOf(r.engine), mode: r.mode, stake: Number(r.stake), currency: r.currency, startedAt: r.startedAt, scores: r.engine.scores, hand: r.engine.handNumber,
       players: r.players.map((p) => ({ seat: p.seat, nickname: p.nickname, isBot: p.isBot, connected: p.userId ? this.realtime.isOnline(p.userId) : true })),
     }));
   }
@@ -289,12 +303,13 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         seat: p.seat, userId: p.userId, nickname: p.nickname, avatar: p.avatar, rating: p.rating, level: p.level, isBot: p.isBot,
         connected: p.isBot || (p.userId ? this.realtime.isOnline(p.userId) : false),
       })),
-      view: playerView(s, seat),
+      view: viewAny(s, seat),
       deadline: rt.deadline,
       diceCommitment: cur?.commitment ?? null,
       // a finished game's dice (the whole committed list; the first `used` were rolled) with the salt to check them
       revealedDice: rt.fairness.filter((f) => f.game !== current).map((f) => ({ game: f.game, rolls: f.rolls, salt: f.salt, commitment: f.commitment })),
       events: rt.lastEvents,
+      serverTime: Date.now(),
     };
   }
 
@@ -346,7 +361,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         return { duplicate: true };
       }
       if (p.version !== rt.engine.version) throw new AppError('STALE_STATE', 'Game state changed, please retry', 409);
-      await this.apply(rt, player.seat, sanitizeAction(p.action), { actorId: userId, actionId: p.actionId, source: 'player' });
+      await this.apply(rt, player.seat, sanitizeAction(gameOf(rt.engine), p.action), { actorId: userId, actionId: p.actionId, source: 'player' });
       rt.recentActions.set(`${userId}:${p.actionId}`, rt.engine.version);
       if (rt.recentActions.size > 500) rt.recentActions.delete(rt.recentActions.keys().next().value!);
       rt.strikes[player.seat] = 0;
@@ -367,13 +382,16 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private async applyForfeit(rt: Runtime, team: Team, meta: Record<string, unknown>) {
-    const res = forfeit(rt.engine, team);
+    const res = forfeitAny(rt.engine, team);
     await this.commit(rt, res.state, res.events.map((e) => ({ type: e.type, payload: { ...e, ...meta } })), res.events);
   }
 
-  private async apply(rt: Runtime, seat: Seat, action: Action, meta: Record<string, unknown>) {
+  private async apply(rt: Runtime, seat: Seat, action: AnyAction, meta: Record<string, unknown>) {
     let fairness = rt.fairness;
-    if (action.type === 'roll') {
+    const game = gameOf(rt.engine);
+    // the server's clock is the only one that counts
+    if (game === 'chess') action = { ...(action as any), at: Date.now() };
+    if (game === 'nardi' && action.type === 'roll') {
       // the dice come from the list fixed (and committed) before the game started
       fairness = fairness.map((f) => ({ ...f }));
       const rec = fairness.find((f) => f.game === rt.engine.handNumber);
@@ -385,14 +403,14 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         action = { type: 'roll', dice: secureRolls(1)[0] };
       }
     }
-    const res = applyAction(rt.engine, seat, action);
+    const res = applyAny(rt.engine, seat, action);
     const next = res.state;
-    const publicEvents: GameEvent[] = [...res.events];
+    const publicEvents: AnyEvent[] = [...res.events];
     const rows: { type: string; seat?: number; payload: any }[] = [
       { type: 'action', seat, payload: { action, version: rt.engine.version, ...meta } },
       ...res.events.map((e) => ({ type: e.type, seat: 'seat' in e ? (e as any).seat : undefined, payload: e })),
     ];
-    if (next.status === 'playing' && next.handNumber !== rt.engine.handNumber) {
+    if (game === 'nardi' && next.status === 'playing' && next.handNumber !== rt.engine.handNumber) {
       // a new game: fix its dice now; the finished game's dice are revealed
       const rolls = secureRolls();
       const { salt, commitment } = commitRolls(rolls);
@@ -403,7 +421,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Persist atomically with optimistic concurrency on Match.version, then update memory + clients. */
-  private async commit(rt: Runtime, next: MatchState, rows: { type: string; seat?: number; payload: any }[], publicEvents: GameEvent[], fairness = rt.fairness) {
+  private async commit(rt: Runtime, next: AnyState, rows: { type: string; seat?: number; payload: any }[], publicEvents: AnyEvent[], fairness = rt.fairness) {
     const prevVersion = rt.engine.version;
     const persisted: PersistedState = { engine: next, fairness, seq: rt.seq, strikes: rt.strikes, leaverSeat: rt.leaverSeat };
     await this.prisma.$transaction(async (tx) => {
@@ -442,19 +460,32 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     if (rt.timer) clearTimeout(rt.timer);
     rt.timer = null;
     rt.deadline = null;
-    const turn = whoseTurn(rt.engine);
-    if (turn === null) return;
-    const player = rt.players[turn];
+    const turn = turnOf(rt.engine);
+    const actor = actorOf(rt.engine);
+    if (turn === null || actor === null) return;
+    const game = gameOf(rt.engine);
     const version = rt.engine.version;
+    const clock = clockDeadline(rt.engine);
+    // chess: the clock of the side on move decides; the server calls the flag when it falls
+    if (clock !== null) {
+      rt.deadline = clock;
+      rt.timer = setTimeout(() => this.timed(rt, version, 'clock'), Math.max(0, clock - Date.now()) + 50);
+    }
+    const player = rt.players[actor];
     if (player.isBot) {
-      // roll after a short pause; then leave time to see the dice before the checkers move
       const base = this.env.botDelayMs;
-      const ms = rt.engine.game?.phase === 'move' ? Math.round(base * 2.2) + randomInt(Math.max(1, Math.round(base * 0.8))) : base + randomInt(Math.max(1, Math.round(base * 0.6)));
-      rt.timer = setTimeout(() => this.timed(rt, version, 'bot'), ms);
+      let ms: number;
+      if (game === 'nardi') {
+        // roll after a short pause; then leave time to see the dice before the checkers move
+        ms = (rt.engine as MatchState).game?.phase === 'move' ? Math.round(base * 2.2) + randomInt(Math.max(1, Math.round(base * 0.8))) : base + randomInt(Math.max(1, Math.round(base * 0.6)));
+      } else ms = Math.round(base * 0.6) + randomInt(Math.max(1, Math.round(base * 0.6)));
+      const botTimer = setTimeout(() => this.timed(rt, version, 'bot'), ms);
+      if (clock === null) rt.timer = botTimer;
       return;
     }
     // the player is away (app closed / phone locked): tell their phone it is their turn
     if (player.userId && !this.realtime.isOnline(player.userId)) this.push.send(player.userId, 'turn', '', `/match/${rt.id}`);
+    if (clock !== null) return;
     const sec = rt.engine.config.turnTimeoutSec;
     if (sec > 0) {
       const ms = (player.userId && !this.realtime.isOnline(player.userId) ? Math.min(sec, 15) : sec) * 1000;
@@ -463,13 +494,21 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private timed(rt: Runtime, version: number, kind: 'bot' | 'timeout') {
+  private timed(rt: Runtime, version: number, kind: 'bot' | 'timeout' | 'clock') {
     this.exclusive(rt, async () => {
       if (rt.engine.version !== version || rt.engine.status !== 'playing') return;
-      const seat = whoseTurn(rt.engine);
+      if (kind === 'clock') {
+        const seat = turnOf(rt.engine);
+        if (seat !== null) await this.apply(rt, seat, { type: 'flag' }, { source: 'clock' });
+        return;
+      }
+      const seat = actorOf(rt.engine);
       if (seat === null) return;
       if (kind === 'bot') {
-        await this.apply(rt, seat, botAction(rt.engine, seat), { source: 'bot' });
+        // chess and checkers bots think in a worker thread so the server stays responsive
+        const action = gameOf(rt.engine) === 'nardi' ? botAny(rt.engine, seat) : await this.bots.think(rt.engine, seat);
+        if (rt.engine.version !== version || rt.engine.status !== 'playing') return;
+        await this.apply(rt, seat, action, { source: 'bot' });
         return;
       }
       rt.strikes[seat] += 1;
@@ -480,13 +519,13 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         await this.applyForfeit(rt, teamOf(seat), { source: 'abandon', seat });
         return;
       }
-      await this.apply(rt, seat, autoAction(rt.engine, seat), { source: 'timeout' });
+      await this.apply(rt, seat, autoAny(rt.engine, seat), { source: 'timeout' });
     }).catch((e) => this.log.error(`timer action failed for ${rt.id}: ${e?.message}`));
   }
 
   // ------------------------------------------------------------------ finishing
 
-  private finishedFields(rt: Runtime, s: MatchState, ps: PersistedState) {
+  private finishedFields(rt: Runtime, s: AnyState, ps: PersistedState) {
     const finishedAt = new Date();
     return {
       status: 'FINISHED' as const,
@@ -499,14 +538,16 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Payouts, ratings, stats and achievements — all inside the same DB transaction as the final move. */
-  private async finalizeInTx(tx: Tx, rt: Runtime, s: MatchState, ps: PersistedState) {
-    const winner = s.winnerTeam!;
+  private async finalizeInTx(tx: Tx, rt: Runtime, s: AnyState, ps: PersistedState) {
+    // chess and checkers can end in a draw (no winner): stakes go back, ratings move half way
+    const winner = s.winnerTeam;
+    const draw = winner === null;
     const humans = rt.players.filter((p) => p.userId);
-    const winners = humans.filter((p) => teamOf(p.seat) === winner);
+    const winners = draw ? humans : humans.filter((p) => teamOf(p.seat) === winner);
 
     if (rt.stake > 0n && humans.length) {
       const pot = rt.stake * BigInt(humans.length);
-      const feePct = (await this.settings.get('economy')).fees.matchFeePercent;
+      const feePct = draw ? 0 : (await this.settings.get('economy')).fees.matchFeePercent;
       let fee = (pot * BigInt(Math.round(feePct * 100))) / 10000n;
       const share = winners.length ? (pot - fee) / BigInt(winners.length) : 0n;
       fee = pot - share * BigInt(winners.length); // rounding remainder goes to fees, never lost
@@ -521,20 +562,22 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       const team = teamOf(seat);
       const mine = rt.players.filter((p) => teamOf(p.seat) === team).map((p) => p.rating ?? 1200);
       const theirs = rt.players.filter((p) => teamOf(p.seat) !== team).map((p) => p.rating ?? 1200);
-      return eloDelta(mine, theirs, team === winner ? 1 : 0);
+      return eloDelta(mine, theirs, draw ? 0.5 : team === winner ? 1 : 0);
     };
-    const marsWinners = new Set(s.history.filter((h) => h.mars).map((h) => h.winner));
+    const marsWinners = new Set(((s.history ?? []) as { mars?: boolean; winner: number }[]).filter((h) => h.mars).map((h) => h.winner));
+    const length = gameOf(s) === 'nardi' ? (s.history ?? []).length : Math.min(15, Math.ceil(((s as any).game?.moves ?? (s as any).game?.sans?.length ?? 0) / 10));
 
     for (const p of humans) {
-      const won = teamOf(p.seat) === winner;
+      const won = !draw && teamOf(p.seat) === winner;
+      const lost = !draw && !won;
       const user = await tx.user.findUniqueOrThrow({ where: { id: p.userId! } });
       const delta = ratingDelta(p.seat);
-      const xpGained = 20 + (won ? 30 : 0) + Math.min(30, s.history.length * 2);
+      const xpGained = 20 + (won ? 30 : draw ? 15 : 0) + Math.min(30, length * 2);
       const xp = user.xp + xpGained;
       const rating = Math.max(100, user.rating + delta);
       await tx.user.update({
         where: { id: user.id },
-        data: { gamesPlayed: { increment: 1 }, wins: { increment: won ? 1 : 0 }, losses: { increment: won ? 0 : 1 }, xp, level: levelForXp(xp), rating },
+        data: { gamesPlayed: { increment: 1 }, wins: { increment: won ? 1 : 0 }, losses: { increment: lost ? 1 : 0 }, xp, level: levelForXp(xp), rating },
       });
       // walking out of a match does not count towards the invite bonus
       if (won || s.finishReason !== 'forfeit') await this.referrals.onGameFinished(tx, user.id, user.gamesPlayed + 1);
@@ -549,12 +592,12 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
       }
       await tx.matchPlayer.update({
         where: { matchId_seat: { matchId: rt.id, seat: p.seat } },
-        data: { result: won ? 'WIN' : ps.leaverSeat === p.seat ? 'ABANDON' : 'LOSS', ratingAfter: rating, ratingBefore: user.rating, xpGained },
+        data: { result: won ? 'WIN' : draw ? 'DRAW' : ps.leaverSeat === p.seat ? 'ABANDON' : 'LOSS', ratingAfter: rating, ratingBefore: user.rating, xpGained },
       });
       await this.users.grantAchievements(tx, user.id, { mars: marsWinners.has(p.seat), privateMatch: rt.mode === 'PRIVATE' });
     }
     for (const p of rt.players.filter((x) => x.isBot)) {
-      await tx.matchPlayer.update({ where: { matchId_seat: { matchId: rt.id, seat: p.seat } }, data: { result: teamOf(p.seat) === winner ? 'WIN' : 'LOSS' } });
+      await tx.matchPlayer.update({ where: { matchId_seat: { matchId: rt.id, seat: p.seat } }, data: { result: draw ? 'DRAW' : teamOf(p.seat) === winner ? 'WIN' : 'LOSS' } });
     }
   }
 
@@ -642,8 +685,24 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 }
 
 /** Accept only the known action shapes from clients (defence in depth before the engine). */
-function sanitizeAction(a: any): Action {
+function sanitizeAction(game: GameId, a: any): AnyAction {
   if (!a || typeof a !== 'object') throw new AppError('BAD_ACTION', 'Invalid action');
+  const square = (v: any) => Number.isInteger(v) && v >= 0 && v < 64;
+  if (game !== 'nardi') {
+    switch (a.type) {
+      case 'resign': case 'offer_draw': case 'accept_draw': case 'decline_draw':
+        return { type: a.type };
+      case 'move':
+        if (game === 'checkers') {
+          if (!Array.isArray(a.move) || a.move.length < 2 || a.move.length > 14 || !a.move.every(square)) throw new AppError('BAD_ACTION', 'Invalid move');
+          return { type: 'move', move: a.move.map(Number) };
+        }
+        if (!a.move || !square(a.move.from) || !square(a.move.to) || (a.move.promo !== undefined && ![2, 3, 4, 5].includes(a.move.promo))) throw new AppError('BAD_ACTION', 'Invalid move');
+        return { type: 'move', move: { from: a.move.from, to: a.move.to, ...(a.move.promo ? { promo: a.move.promo } : {}) } };
+      default:
+        throw new AppError('BAD_ACTION', 'Unknown action');
+    }
+  }
   switch (a.type) {
     case 'roll':
       // dice are never taken from the client

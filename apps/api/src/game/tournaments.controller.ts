@@ -7,7 +7,7 @@ import { TournamentsService } from './tournaments.service';
 
 class CreateTournamentDto {
   @IsString() @Length(2, 60) name: string;
-  @IsIn(['short', 'long']) variant: 'short' | 'long';
+  @IsIn(['short', 'long', 'checkers', 'chess']) variant: 'short' | 'long' | 'checkers' | 'chess';
   @IsIn([1, 3, 5, 7]) targetScore: number;
   @IsIn([4, 8, 16, 32]) maxPlayers: number;
   @IsArray() @ArrayMaxSize(3) @IsInt({ each: true }) @Min(0, { each: true }) @Max(1_000_000, { each: true }) prizes: number[];

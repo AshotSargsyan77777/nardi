@@ -1,3 +1,4 @@
+import { GAME_KINDS, GameKind } from '@nardi/engine';
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Type } from 'class-transformer';
@@ -165,7 +166,7 @@ export class UsersController {
   @Public() @Get('leaderboard')
   leaderboard(@Query() q: any) {
     const p = page(q, 100);
-    const variant = q.variant === 'short' || q.variant === 'long' ? q.variant : undefined;
+    const variant = (GAME_KINDS as string[]).includes(q.variant) ? (q.variant as GameKind) : undefined;
     if (variant) return this.users.seasonLeaderboard(p.skip, p.take, { month: q.season === 'month', variant });
     return q.season === 'month' ? this.users.seasonLeaderboard(p.skip, p.take, { month: true }) : this.users.leaderboard(p.skip, p.take);
   }

@@ -7,6 +7,8 @@ import { PrismaService } from '../common/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { rollsCommitment } from './fairness';
 import { MatchService } from './match.service';
+import { editableKeys } from './rooms.service';
+import { gameOf } from '@nardi/engine';
 import { MatchmakingService } from './matchmaking.service';
 import { RoomsService } from './rooms.service';
 
@@ -99,8 +101,9 @@ export class GameController {
     const existing = this.matches.activeMatchOf(u.id);
     if (existing) return { matchId: existing, resumed: true };
     const game = await this.settings.get('game');
-    const rules: any = { ...game.defaultRules };
-    for (const k of game.hostEditableRules) if (dto.rules && k in dto.rules) rules[k] = dto.rules[k];
+    const kind = gameOf(dto.rules ?? {});
+    const rules: any = { ...game.defaultRules, game: kind };
+    for (const k of editableKeys(kind, game.hostEditableRules)) if (dto.rules && k in dto.rules) rules[k] = dto.rules[k];
     const matchId = await this.matches.create({
       mode: 'PRACTICE', rules, stake: 0, currency: 'FUN', ranked: false, chatEnabled: false,
       seats: [{ userId: u.id }, { botName: MatchService.botName(Math.floor(Math.random() * 8)) }],

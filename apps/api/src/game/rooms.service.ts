@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { RoomDTO, RoomSettings, Seat, SeatInfo, normalizeRules } from '@nardi/engine';
+import { GameId, RoomDTO, RoomSettings, Seat, SeatInfo, gameOf, normalizeAnyRules } from '@nardi/engine';
 import { Prisma, Room, RoomMember, RoomStatus, User } from '@prisma/client';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -65,13 +65,17 @@ export class RoomsService {
     const game = await this.settings.get('game');
     const f = await this.settings.effectiveFeatures();
     const base: RoomSettings = prev ?? { rules: {}, stake: 0, currency: 'FUN', chatEnabled: true, allowBots: true };
-    const s: RoomSettings = { ...base, ...input, rules: { ...base.rules, ...(input.rules ?? {}) } };
+    // fields left out (undefined) keep their previous value
+    const given = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as Partial<RoomSettings>;
+    const s: RoomSettings = { ...base, ...given, rules: { ...base.rules, ...(input.rules ?? {}) } };
     // hosts may only change rule keys the owner allows; everything else comes from defaults
-    const rules: any = { ...game.defaultRules };
-    for (const k of game.hostEditableRules) if (k in s.rules) rules[k] = (s.rules as any)[k];
-    const normalized = normalizeRules(rules);
-    if (!game.allowedTargetScores.includes(normalized.targetScore)) throw new AppError('BAD_RULES', 'Target score is not allowed');
-    if (!game.allowedTurnTimeouts.includes(normalized.turnTimeoutSec)) throw new AppError('BAD_RULES', 'Turn timer is not allowed');
+    const kind = gameOf(s.rules);
+    const editable = editableKeys(kind, game.hostEditableRules);
+    const rules: any = { ...game.defaultRules, game: kind };
+    for (const k of editable) if (k in s.rules) rules[k] = (s.rules as any)[k];
+    const normalized: any = normalizeAnyRules(rules);
+    if (kind === 'nardi' && !game.allowedTargetScores.includes(normalized.targetScore)) throw new AppError('BAD_RULES', 'Target score is not allowed');
+    if (kind !== 'chess' && !game.allowedTurnTimeouts.includes(normalized.turnTimeoutSec)) throw new AppError('BAD_RULES', 'Turn timer is not allowed');
     if (s.currency !== 'FUN') throw new AppError('BAD_CURRENCY', 'Unknown currency');
     s.stake = Number(s.stake ?? 0);
     if (s.stake > 0) {
@@ -80,7 +84,7 @@ export class RoomsService {
       s.allowBots = false;
     }
     if (!f.practiceBotsEnabled) s.allowBots = false;
-    return { rules: Object.fromEntries(game.hostEditableRules.map((k) => [k, (normalized as any)[k]])), stake: s.stake, currency: s.currency, chatEnabled: !!s.chatEnabled, allowBots: !!s.allowBots };
+    return { rules: { game: kind, ...Object.fromEntries(editable.map((k) => [k, normalized[k]])) }, stake: s.stake, currency: s.currency, chatEnabled: !!s.chatEnabled, allowBots: !!s.allowBots };
   }
 
   async create(userId: string, input: Partial<RoomSettings>) {
@@ -263,4 +267,11 @@ export class RoomsService {
   isMember(room: RoomDTO, userId: string) {
     return room.seats.some((s) => s.userId === userId);
   }
+}
+
+/** The rule keys a host may set for each game (nardi: as the owner allows). */
+export function editableKeys(kind: GameId, nardiKeys: string[]): string[] {
+  if (kind === 'checkers') return ['botLevel', 'turnTimeoutSec'];
+  if (kind === 'chess') return ['botLevel', 'clockMin', 'clockInc'];
+  return nardiKeys.filter((k) => k !== 'game');
 }

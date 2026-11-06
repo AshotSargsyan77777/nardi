@@ -1,7 +1,7 @@
 import { PushService } from '../common/push.service';
 import { BlocksService } from '../users/blocks.service';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { MatchmakingStatus, Variant } from '@nardi/engine';
+import { CHESS_CLOCKS, MatchmakingStatus } from '@nardi/engine';
 import { randomInt, randomUUID } from 'crypto';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -12,7 +12,7 @@ import { MatchService } from './match.service';
 import { RealtimeService } from './realtime.service';
 import { StakePolicy } from './stake-policy.service';
 
-interface QueueMeta { id: string; currency: Currency; stake: number; ranked: boolean; variant: Variant }
+interface QueueMeta { id: string; currency: Currency; stake: number; ranked: boolean; rules: Record<string, unknown> }
 interface Entry { userId: string; rating: number; level: number; joinedAt: number }
 interface Proposal { id: string; queue: QueueMeta; entries: Entry[]; accepted: Set<string>; expiresAt: number; timer: NodeJS.Timeout }
 
@@ -20,17 +20,26 @@ const PROPOSAL_TTL_MS = 15_000;
 const QKEY = (q: string) => `mm:q:${q}`;
 const UKEY = (u: string) => `mm:u:${u}`;
 
-/** Queue ids: `casual`, `ranked` or `fun:<stake>`, then `@short` / `@long` for the game (short if left out). */
+/**
+ * Queue ids: `casual`, `ranked` or `fun:<stake>`, then which game: `@short` / `@long` (nardi, short if
+ * left out), `@checkers`, or `@chess:<minutes>+<increment>` (one of the allowed clocks).
+ */
 export function parseQueue(raw: string): QueueMeta {
-  const [base, v] = raw.split('@');
-  const variant: Variant = v === 'long' ? 'long' : 'short';
-  if (v !== undefined && v !== 'short' && v !== 'long') throw new AppError('BAD_QUEUE', 'Unknown queue');
-  const id = `${base}@${variant}`;
-  if (base === 'casual') return { id, currency: 'FUN', stake: 0, ranked: false, variant };
-  if (base === 'ranked') return { id, currency: 'FUN', stake: 0, ranked: true, variant };
+  const [base, v = 'short'] = raw.split('@');
+  let rules: Record<string, unknown>;
+  if (v === 'short' || v === 'long') rules = { game: 'nardi', variant: v };
+  else if (v === 'checkers') rules = { game: 'checkers' };
+  else {
+    const c = /^chess:(\d{1,2})\+(\d{1,2})$/.exec(v);
+    if (!c || !CHESS_CLOCKS.some(([m, i]) => m === Number(c[1]) && i === Number(c[2]))) throw new AppError('BAD_QUEUE', 'Unknown queue');
+    rules = { game: 'chess', clockMin: Number(c[1]), clockInc: Number(c[2]) };
+  }
+  const id = `${base}@${v}`;
+  if (base === 'casual') return { id, currency: 'FUN', stake: 0, ranked: false, rules };
+  if (base === 'ranked') return { id, currency: 'FUN', stake: 0, ranked: true, rules };
   const m = /^fun:(\d{1,7})$/.exec(base);
   if (!m) throw new AppError('BAD_QUEUE', 'Unknown queue');
-  return { id, currency: 'FUN', stake: Number(m[1]), ranked: false, variant };
+  return { id, currency: 'FUN', stake: Number(m[1]), ranked: false, rules };
 }
 
 /**
@@ -224,7 +233,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       const game = await this.settings.get('game');
       await this.stakes.assertAllowed(p.queue.currency, p.queue.stake, seats.map((s) => s.userId));
       const matchId = await this.matches.create({
-        mode: 'RANDOM', rules: { ...game.defaultRules, variant: p.queue.variant }, stake: p.queue.stake, currency: p.queue.currency, ranked: p.queue.ranked, chatEnabled: true,
+        mode: 'RANDOM', rules: { ...game.defaultRules, ...p.queue.rules }, stake: p.queue.stake, currency: p.queue.currency, ranked: p.queue.ranked, chatEnabled: true,
         seats: seats.map((s) => ({ userId: s.userId })),
       });
       for (const e of p.entries) {
@@ -252,7 +261,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     for (let i = 0; i < 2; i++) seats.push(humans[i] ? { userId: humans[i].userId } : { botName: MatchService.botName(i) });
     try {
       const game = await this.settings.get('game');
-      const matchId = await this.matches.create({ mode: 'RANDOM', rules: { ...game.defaultRules, variant: queue.variant }, stake: 0, currency: 'FUN', ranked: false, chatEnabled: true, seats });
+      const matchId = await this.matches.create({ mode: 'RANDOM', rules: { ...game.defaultRules, ...queue.rules }, stake: 0, currency: 'FUN', ranked: false, chatEnabled: true, seats });
       for (const h of humans) this.realtime.toUser(h.userId, 'mm:status', { state: 'matched', queue: queue.id, since: null, proposal: null, matchId });
     } catch (e: any) {
       this.log.warn(`bot fill failed: ${e?.message}`);

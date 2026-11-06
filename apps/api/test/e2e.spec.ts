@@ -9,7 +9,7 @@ import request from 'supertest';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { SettingsService } from '../src/settings/settings.service';
 import { ReferralsService } from '../src/users/referrals.service';
-import { autoPlay, bootApp, connect, post, prismaOf, registerUser, sleep, TestUser } from './helpers';
+import { autoActionFor, autoPlay, bootApp, connect, post, prismaOf, registerUser, sleep, TestUser } from './helpers';
 
 jest.setTimeout(180_000);
 
@@ -170,6 +170,77 @@ describe('NARDI API end-to-end', () => {
     });
   });
 
+  describe('chess and checkers', () => {
+    for (const game of ['checkers', 'chess'] as const) {
+      it(`plays a whole ${game} game against a bot`, async () => {
+        const u = await registerUser(app);
+        const s = await connect(u);
+        // chess against a bot can go on for long: after 20 moves the player resigns
+        const done = game === 'chess'
+          ? new Promise<MatchDTO>((resolve) => s.on('match:state', (d: MatchDTO) => {
+              const v: any = d.view;
+              if (v.status === 'finished') return resolve(d);
+              const action = v.sans?.length >= 20 && v.turn === v.seat ? { type: 'resign' } : autoActionFor(v);
+              if (action) s.emit('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action });
+            }))
+          : autoPlay(s);
+        const r = await post(u, '/api/matches/practice', { rules: { game, botLevel: 'easy', ...(game === 'chess' ? { clockMin: 15, clockInc: 10 } : {}) } });
+        expect(r.status).toBe(201);
+        // the first state comes with the start
+        const first = (await u.agent.get(`/api/matches/${r.body.matchId}/state`)).body;
+        expect(first.view.game).toBe(game);
+        s.listeners('match:state').forEach((fn) => fn(first));
+        const final = await done;
+        expect(final.view.status).toBe('finished');
+        const m = await prismaOf(app).match.findUniqueOrThrow({ where: { id: r.body.matchId }, include: { players: true } });
+        expect(m.status).toBe('FINISHED');
+        expect((m.rules as any).game).toBe(game);
+        const me = m.players.find((p) => p.userId === u.id)!;
+        expect(['WIN', 'LOSS', 'DRAW']).toContain(me.result);
+        if (me.result === 'DRAW') expect(m.winnerTeam).toBeNull();
+        s.close();
+      }, 240_000);
+    }
+
+    it('resigns, offers and declines draws between two players', async () => {
+      const [a, b] = await Promise.all([registerUser(app), registerUser(app)]);
+      const room = (await post(a, '/api/rooms', { rules: { game: 'chess', clockMin: 3, clockInc: 2 } })).body;
+      expect(room.settings.rules).toMatchObject({ game: 'chess', clockMin: 3, clockInc: 2 });
+      expect((await post(b, `/api/rooms/${room.code}/join`)).status).toBe(200);
+      await post(b, `/api/rooms/${room.code}/ready`, { ready: true });
+      await post(a, `/api/rooms/${room.code}/ready`, { ready: true });
+      const [sa, sb] = await Promise.all([connect(a), connect(b)]);
+      const started = (await post(a, `/api/rooms/${room.code}/start`)).body;
+      const matchId = started.matchId;
+      const state = async (u: typeof a) => (await u.agent.get(`/api/matches/${matchId}/state`)).body;
+      const act = (s: typeof sa, d: any, action: any) => s.emitWithAck('match:action', { matchId, version: d.view.version, actionId: randomUUID(), action });
+      let da = await state(a);
+      expect(da.view.clock.left).toEqual([180000, 180000]);
+      const white = da.view.seat === 0 ? sa : sb;
+      const whiteUser = da.view.seat === 0 ? a : b;
+      const blackSock = white === sa ? sb : sa;
+      const blackUser = white === sa ? b : a;
+      da = await state(whiteUser);
+      expect(await act(white, da, { type: 'move', move: { from: 52, to: 36 } })).toMatchObject({ ok: true }); // e2-e4
+      let db = await state(blackUser);
+      expect(db.view.sans).toEqual(['e4']);
+      expect(await act(blackSock, db, { type: 'offer_draw' })).toMatchObject({ ok: true });
+      da = await state(whiteUser);
+      expect(da.view.drawOffer).toBe(1);
+      expect(await act(white, da, { type: 'decline_draw' })).toMatchObject({ ok: true });
+      db = await state(blackUser);
+      expect(db.view.drawOffer).toBeNull();
+      expect(await act(blackSock, db, { type: 'resign' })).toMatchObject({ ok: true });
+      await sleep(200);
+      const m = await prismaOf(app).match.findUniqueOrThrow({ where: { id: matchId }, include: { players: true } });
+      expect(m.status).toBe('FINISHED');
+      expect(m.finishReason).toBe('resign');
+      expect(m.players.find((p) => p.userId === whiteUser.id)!.result).toBe('WIN');
+      sa.close();
+      sb.close();
+    });
+  });
+
   describe('private room with bots (practice chips, no stake)', () => {
     it('runs a full match server-side and records the result', async () => {
       const host = await registerUser(app);
@@ -290,14 +361,8 @@ describe('NARDI API end-to-end', () => {
         });
         s.on('match:state', (d: MatchDTO) => {
           const v = d.view;
-          if (process.env.DEBUG_T) console.log('STATE', k, v.version, v.phase, v.turn, v.seat, v.status);
-          if (v.status !== 'playing' || v.seat === null || v.turn !== v.seat) return;
-          let action: any = { type: 'roll' };
-          if (v.phase === 'move') {
-            const moves: any[] = [];
-            while (moves.length < v.movesRequired) moves.push(viewMoveOptions(v, moves)[0]);
-            action = { type: 'move', moves };
-          }
+          const action = autoActionFor(v);
+          if (!action) return;
           s.emitWithAck('match:action', { matchId: d.matchId, version: v.version, actionId: randomUUID(), action }).then((r: any) => { if (process.env.DEBUG_T && r?.error) console.log('ACK', k, JSON.stringify(r).slice(0, 200)); });
         });
       });
