@@ -2,6 +2,7 @@
 import { Action, MatchDTO, PlayerView } from '@nardi/engine';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BlotTable } from '@/components/game/BlotTable';
 import { DuelTable } from '@/components/game/DuelTable';
 import { GameTable } from '@/components/game/GameTable';
 import { Loading } from '@/components/ui';
@@ -65,6 +66,7 @@ export default function MatchPage() {
   const onLeave = () => socket?.emit('match:leave', { matchId: id });
 
   if (!me || !dto) return <Loading />;
+  if (dto.view.game === 'blot') return <BlotTable key={dto.matchId} dto={dto as MatchDTO<any>} onAction={onAction as any} onLeave={onLeave} busy={busy} actionError={actionError} />;
   if (dto.view.game === 'chess' || dto.view.game === 'checkers') return <DuelTable key={dto.matchId} dto={dto as MatchDTO<any>} onAction={onAction as any} onLeave={onLeave} busy={busy} actionError={actionError} />;
   return <GameTable key={dto.matchId} dto={dto as MatchDTO<PlayerView>} onAction={onAction} onLeave={onLeave} busy={busy} actionError={actionError} />;
 }

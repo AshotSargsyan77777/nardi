@@ -2,7 +2,10 @@
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
 import { GAME_KINDS, GameKind, kindOf } from '@nardi/engine';
+import { DEFAULT_RULES as BLOT_DEFAULTS, RULE_LIMITS as BLOT_LIMITS } from '@nardi/engine/dist/blot';
 import { ClockPicker, KIND_ICON, kindRules } from './PlayActions';
+
+const BLOT_KEYS = ['targetScore', 'turnTimeoutSec', 'cardsBeforeBidding', 'dealStyle', 'botLevel', 'allowNoTrump', 'noTrumpDoubled', 'contraEnabled', 'recontraEnabled', 'allowKapotBid'];
 import { Field, Toggle, inputCls } from './ui';
 
 export interface RoomSettingsValue {
@@ -26,8 +29,10 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
   const kind = kindOf(value.rules);
   const nardi = kind === 'short' || kind === 'long';
   // nardi: what the owner lets hosts change; checkers: the move timer; chess: the clock
-  const editable = new Set(nardi ? g.hostEditableRules : kind === 'checkers' ? ['turnTimeoutSec', 'botLevel'] : ['botLevel']);
-  const rule = (k: string) => value.rules[k] ?? g.defaultRules[k];
+  const blot = kind === 'blot';
+  const editable = new Set<string>(nardi ? g.hostEditableRules : kind === 'checkers' ? ['turnTimeoutSec', 'botLevel'] : blot ? BLOT_KEYS : ['botLevel']);
+  // blot has its own defaults; nardi uses the owner's
+  const rule = (k: string) => value.rules[k] ?? (blot ? (BLOT_DEFAULTS as any)[k] : g.defaultRules[k]);
   const setKind = (k: GameKind) => {
     const keep = k === 'short' || k === 'long' ? { targetScore: rule('targetScore'), turnTimeoutSec: rule('turnTimeoutSec'), marsEnabled: rule('marsEnabled') } : k === 'checkers' ? { turnTimeoutSec: rule('turnTimeoutSec') } : {};
     onChange({ ...value, rules: { ...kindRules(k), ...keep, botLevel: rule('botLevel') } });
@@ -52,6 +57,29 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
         </Field>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
+        {blot && (
+          <Field label={t('friends.targetScore')}>
+            <select disabled={disabled} className={inputCls} value={rule('targetScore')} onChange={(e) => setRule('targetScore', Number(e.target.value))}>
+              {BLOT_LIMITS.targetScore.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </Field>
+        )}
+        {blot && (
+          <Field label={t('friends.cardsBeforeBidding')}>
+            <select disabled={disabled} className={inputCls} value={rule('cardsBeforeBidding')} onChange={(e) => setRule('cardsBeforeBidding', Number(e.target.value))}>
+              <option value={8}>{t('friends.cards8')}</option>
+              <option value={4}>{t('friends.cards4')}</option>
+            </select>
+          </Field>
+        )}
+        {blot && (
+          <Field label={t('friends.dealStyle')}>
+            <select disabled={disabled} className={inputCls} value={rule('dealStyle')} onChange={(e) => setRule('dealStyle', e.target.value)}>
+              <option value="table">{t('friends.dealTable')}</option>
+              <option value="random">{t('friends.dealRandom')}</option>
+            </select>
+          </Field>
+        )}
         {nardi && editable.has('targetScore') && (
           <Field label={t('friends.targetScore')}>
             <select disabled={disabled} className={inputCls} value={rule('targetScore')} onChange={(e) => setRule('targetScore', Number(e.target.value))}>
@@ -62,7 +90,7 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
         {editable.has('turnTimeoutSec') && (
           <Field label={t('friends.turnTimer')}>
             <select disabled={disabled} className={inputCls} value={rule('turnTimeoutSec')} onChange={(e) => setRule('turnTimeoutSec', Number(e.target.value))}>
-              {g.allowedTurnTimeouts.map((n) => <option key={n} value={n}>{n} {t('common.seconds')}</option>)}
+              {(blot ? [15, 30, 45, 60] : g.allowedTurnTimeouts).map((n) => <option key={n} value={n}>{n} {t('common.seconds')}</option>)}
             </select>
           </Field>
         )}
@@ -90,6 +118,9 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
       </div>
       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/50">{t('friends.rulesHeading')}</div>
       <div className="divide-y divide-white/5 rounded-xl bg-black/20 px-3">
+        {blot && (['allowNoTrump', 'noTrumpDoubled', 'contraEnabled', 'recontraEnabled', 'allowKapotBid'] as const)
+          .filter((k) => k !== 'noTrumpDoubled' || rule('allowNoTrump'))
+          .map((k) => <Toggle key={k} disabled={disabled} label={t(`friends.${k}`)} checked={!!rule(k)} onChange={(v) => setRule(k, v)} />)}
         {nardi && editable.has('marsEnabled') && <Toggle disabled={disabled} label={t('friends.marsEnabled')} checked={!!rule('marsEnabled')} onChange={(v) => setRule('marsEnabled', v)} />}
         <Toggle disabled={disabled} label={t('friends.chat')} checked={value.chatEnabled} onChange={(v) => onChange({ ...value, chatEnabled: v })} />
         {config.features.practiceBotsEnabled && (

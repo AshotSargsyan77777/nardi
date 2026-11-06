@@ -310,7 +310,7 @@ export function DuelTable({ dto, onAction, onLeave, busy, actionError, spectator
         <PlayerMenu nickname={players[menuSeat].nickname!} matchId={dto.matchId} muted={!!muted[menuSeat]} onMute={() => setMuted((m) => ({ ...m, [menuSeat]: !m[menuSeat] }))} onClose={() => setMenuSeat(null)} />
       )}
       {showEmotes && (
-        <EmotePanel phase="move" onSend={sendEmote} others={players[oppSeat]?.isBot ? [] : [{ seat: oppSeat, nickname: nameOf(oppSeat) }]} muted={muted} onToggleMute={(seat) => setMuted((m) => ({ ...m, [seat]: !m[seat] }))} onClose={() => setShowEmotes(false)} />
+        <EmotePanel phase="move" game={v.game} onSend={sendEmote} others={players[oppSeat]?.isBot ? [] : [{ seat: oppSeat, nickname: nameOf(oppSeat) }]} muted={muted} onToggleMute={(seat) => setMuted((m) => ({ ...m, [seat]: !m[seat] }))} onClose={() => setShowEmotes(false)} />
       )}
       <AnimatePresence>
         {showChat && (

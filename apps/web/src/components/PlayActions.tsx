@@ -51,7 +51,7 @@ export function BotLevelPicker({ level, onChange }: { level: BotLevel; onChange:
 export type Variant = GameKind;
 const VARIANT_KEY = 'bb_variant';
 const CLOCK_KEY = 'bb_chess_clock';
-export const KIND_ICON: Record<GameKind, string> = { short: '🎲', long: '🎲', checkers: '⛀', chess: '♞' };
+export const KIND_ICON: Record<GameKind, string> = { blot: '🃏', short: '🎲', long: '🎲', checkers: '⛀', chess: '♞' };
 
 function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T) {
   const [v, setV] = useState<T>(fallback);

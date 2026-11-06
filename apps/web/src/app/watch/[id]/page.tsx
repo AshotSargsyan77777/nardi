@@ -2,6 +2,7 @@
 import { MatchDTO, PlayerView } from '@nardi/engine';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BlotTable } from '@/components/game/BlotTable';
 import { DuelTable } from '@/components/game/DuelTable';
 import { GameTable } from '@/components/game/GameTable';
 import { ErrorText, Loading } from '@/components/ui';
@@ -34,6 +35,7 @@ export default function WatchPage() {
   useSocketEvent<MatchDTO>('match:state', accept);
   if (error) return <ErrorText error={new Error(error)} />;
   if (!dto) return <Loading />;
+  if (dto.view.game === 'blot') return <BlotTable key={dto.matchId} dto={dto as MatchDTO<any>} onAction={() => undefined} onLeave={() => router.push('/friends')} busy={false} actionError={null} spectator />;
   if (dto.view.game === 'chess' || dto.view.game === 'checkers') return <DuelTable key={dto.matchId} dto={dto as MatchDTO<any>} onAction={() => undefined} onLeave={() => router.push('/friends')} busy={false} actionError={null} spectator />;
   return <GameTable key={dto.matchId} dto={dto as MatchDTO<PlayerView>} onAction={() => undefined} onLeave={() => router.push('/friends')} busy={false} actionError={null} spectator />;
 }

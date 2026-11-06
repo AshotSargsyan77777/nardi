@@ -20,8 +20,8 @@ const DAILY: Quest[] = [
   { id: 'long1', target: 1, reward: 400 },
   { id: 'friends1', target: 1, reward: 400 },
   { id: 'random1', target: 1, reward: 400 },
-  { id: 'blot1', target: 1, reward: 300 },
-  { id: 'blotWin1', target: 1, reward: 500 },
+  { id: 'playBlot1', target: 1, reward: 300 },
+  { id: 'winBlot1', target: 1, reward: 500 },
   { id: 'checkers1', target: 1, reward: 300 },
   { id: 'chess1', target: 1, reward: 300 },
   { id: 'checkersWin1', target: 1, reward: 400 },
@@ -123,7 +123,7 @@ export class QuestsService {
     return ({
       play3: 'play', win1: 'win', win2: 'win', games5: 'games', gameWins3: 'gameWins', mars1: 'mars', doubles5: 'doubles', sheshBesh1: 'sheshBesh',
       short1: 'short', long1: 'long', friends1: 'friends', random1: 'random',
-      blot1: 'blot', blotWin1: 'blotWins', checkers1: 'checkers', chess1: 'chess', checkersWin1: 'checkersWins', chessWin1: 'chessWins',
+      playBlot1: 'blot', winBlot1: 'blotWins', checkers1: 'checkers', chess1: 'chess', checkersWin1: 'checkersWins', chessWin1: 'chessWins',
       wWin10: 'win', wPlay25: 'play', wMars3: 'mars', wGames40: 'games',
     } as Record<string, string>)[id];
   }

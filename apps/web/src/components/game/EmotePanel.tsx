@@ -2,7 +2,7 @@
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
 
-export interface EmotePhrase { id: string; group: 'play' | 'general'; hy: string; ru: string; en: string }
+export interface EmotePhrase { id: string; group: 'play' | 'general' | 'bazar'; game?: string; hy: string; ru: string; en: string }
 export interface Emotes { phrases: EmotePhrase[]; emojis: string[] }
 
 /** Text of a phrase id (in the viewer's language) or the emoji itself. */
@@ -17,8 +17,10 @@ export function useEmoteText() {
 }
 
 /** Quick phrases and emojis; the current phase's group comes first. Other players can be muted here. */
-export function EmotePanel({ phase, onSend, others, muted, onToggleMute, onClose }: {
+export function EmotePanel({ phase, game = 'nardi', onSend, others, muted, onToggleMute, onClose }: {
   phase: string;
+  /** Phrases made for another game are left out. */
+  game?: string;
   onSend: (id: string) => void;
   others: { seat: number; nickname: string }[];
   muted: Record<number, boolean>;
@@ -29,8 +31,8 @@ export function EmotePanel({ phase, onSend, others, muted, onToggleMute, onClose
   const { t, locale } = useI18n();
   const emotes = config?.game.emotes;
   if (!emotes) return null;
-  const order = phase === 'finished' ? ['general', 'play'] : ['play', 'general'];
-  const phrases = [...emotes.phrases].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+  const order = phase === 'finished' ? ['general', 'play', 'bazar'] : phase === 'bidding' ? ['bazar', 'general', 'play'] : ['play', 'general', 'bazar'];
+  const phrases = emotes.phrases.filter((p) => !p.game || p.game === game).sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />

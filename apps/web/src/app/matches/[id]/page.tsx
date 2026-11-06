@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import useSWR from 'swr';
 import { Avatar } from '@/components/Avatar';
+import { HandSummary } from '@/components/game/BlotTable';
 import { GameSummary } from '@/components/game/GameTable';
 import { Badge, Button, Coins, ErrorText, Loading, PageTitle, Panel, StatusBadge } from '@/components/ui';
 import { useRequireAuth } from '@/lib/app-state';
@@ -21,7 +22,7 @@ export default function MatchDetailsPage() {
   const nameOf = (s: number) => m.players[s]?.nickname ?? `#${s}`;
   return (
     <div className="space-y-5">
-      <PageTitle sub={`${t(`history.mode.${m.mode}`)} · ${fmtDate(m.startedAt, locale)} · ${fmtDuration(m.durationSec)}`} action={m.status === 'ACTIVE' ? <Link href={`/match/${m.id}`}><Button variant="gold">{t('home.resume')}</Button></Link> : <Link href={`/matches/${m.id}/replay`}><Button variant="gold">▶ {t('replay.watch')}</Button></Link>}>
+      <PageTitle sub={`${t(`history.mode.${m.mode}`)} · ${fmtDate(m.startedAt, locale)} · ${fmtDuration(m.durationSec)}`} action={m.status === 'ACTIVE' ? <Link href={`/match/${m.id}`}><Button variant="gold">{t('home.resume')}</Button></Link> : m.rules?.game === 'blot' ? undefined : <Link href={`/matches/${m.id}/replay`}><Button variant="gold">▶ {t('replay.watch')}</Button></Link>}>
         {t('game.details')}
       </PageTitle>
       <Panel>
@@ -42,16 +43,18 @@ export default function MatchDetailsPage() {
       </Panel>
       <div className="grid gap-5 lg:grid-cols-2">
         {m.hands.map((h: any) => (
-          <Panel key={h.game} title={t('game.gameN', { n: h.game })}><GameSummary r={h} mySeat={myTeam} nameOf={nameOf} /></Panel>
+          m.rules?.game === 'blot'
+            ? <Panel key={h.hand} title={t('game.hand', { n: h.hand })}><HandSummary r={h} myTeam={myTeam} nameOf={nameOf} /></Panel>
+            : <Panel key={h.game} title={t('game.gameN', { n: h.game })}><GameSummary r={h} mySeat={myTeam} nameOf={nameOf} /></Panel>
         ))}
       </div>
       <Panel title={`🛡️ ${t('game.fairness')}`}>
         <p className="mb-3 text-sm text-white/60">{t('game.fairnessText')}</p>
         <div className="space-y-2 text-xs">
           {m.fairness.map((f: any) => (
-            <div key={f.game} className="rounded-xl bg-black/25 p-3">
-              <div className="mb-1 flex items-center gap-2 font-semibold">{t('game.gameN', { n: f.game })} {f.verified && <Badge color="green">✓ {t('game.verified')}</Badge>}</div>
-              <div className="break-all font-mono text-white/45">{t('game.rolled')}: {f.rolls.slice(0, f.used).map((r: number[]) => r.join('')).join(' ')}</div>
+            <div key={f.deck ? `h${f.hand}` : f.game} className="rounded-xl bg-black/25 p-3">
+              <div className="mb-1 flex items-center gap-2 font-semibold">{f.deck ? t('game.hand', { n: f.hand }) : t('game.gameN', { n: f.game })} {f.verified && <Badge color="green">✓ {t('game.verified')}</Badge>}</div>
+              <div className="break-all font-mono text-white/45">{f.deck ? f.deck.join(' ') : `${t('game.rolled')}: ${f.rolls.slice(0, f.used).map((r: number[]) => r.join('')).join(' ')}`}</div>
               <div className="break-all font-mono text-felt-500">{f.commitment}</div>
             </div>
           ))}

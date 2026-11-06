@@ -77,8 +77,12 @@ export default function RoomPage() {
   const SeatCard = ({ s }: { s: SeatInfo }) => {
     const taken = s.userId || s.isBot;
     return (
-      <div className={`relative flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center ${s.seat === 0 ? 'border-felt-500/30 bg-felt-900/40' : 'border-gold-400/25 bg-gold-600/10'}`}>
-        <span className="absolute left-2 top-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-white/40"><span className={`h-2.5 w-2.5 rounded-full ${s.seat === 0 ? 'bg-[#f4ead2]' : 'bg-[#2a1a14] ring-1 ring-gold-500/60'}`} />{s.seat === 0 ? t('game.light') : t('game.dark')}</span>
+      <div className={`relative flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center ${s.seat % 2 === 0 ? 'border-felt-500/30 bg-felt-900/40' : 'border-gold-400/25 bg-gold-600/10'}`}>
+        <span className="absolute left-2 top-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+          {room.seats.length === 4
+            ? <>{t('room.team', { n: (s.seat % 2) + 1 })}</>
+            : <><span className={`h-2.5 w-2.5 rounded-full ${s.seat === 0 ? 'bg-[#f4ead2]' : 'bg-[#2a1a14] ring-1 ring-gold-500/60'}`} />{s.seat === 0 ? t('game.light') : t('game.dark')}</>}
+        </span>
         {taken ? (
           <>
             <Avatar name={s.avatar} size={48} ring={s.ready ? 'ring-2 ring-felt-500' : 'ring-2 ring-white/10'} />
@@ -107,7 +111,7 @@ export default function RoomPage() {
 
   return (
     <div>
-      <PageTitle sub={<span className="flex items-center gap-2"><StatusBadge status={room.status} /> {filled}/2</span>} action={room.matchId && room.status === 'PLAYING' ? <Link href={`/match/${room.matchId}`}><Button variant="gold">{t('room.goToMatch')}</Button></Link> : undefined}>
+      <PageTitle sub={<span className="flex items-center gap-2"><StatusBadge status={room.status} /> {filled}/{room.seats.length}</span>} action={room.matchId && room.status === 'PLAYING' ? <Link href={`/match/${room.matchId}`}><Button variant="gold">{t('room.goToMatch')}</Button></Link> : undefined}>
         {t('room.title', { code: room.code })}
       </PageTitle>
       {room.status === 'CANCELLED' && <Panel className="mb-4"><p className="text-ruby-400">{t('room.cancelled')}</p></Panel>}
@@ -117,7 +121,7 @@ export default function RoomPage() {
         <div className="space-y-5">
           <Panel>
             <div className="grid grid-cols-2 gap-3">
-              {[0, 1].map((i) => <SeatCard key={i} s={room.seats[i]} />)}
+              {room.seats.map((x) => <SeatCard key={x.seat} s={x} />)}
             </div>
             <ErrorText error={error} />
             <div className="mt-4 flex flex-wrap gap-2">

@@ -5,7 +5,7 @@ import { Panel } from './ui';
 export interface DetailedStats {
   matches: number; shortMatches: number; shortWins: number; longMatches: number; longWins: number;
   games: number; gamesWonPct: number; mars: number; marsAgainst: number; rolls: number; doublesPct: number; sheshBesh: number;
-  checkersMatches?: number; checkersWins?: number; checkersDraws?: number; chessMatches?: number; chessWins?: number; chessDraws?: number;
+  blotMatches?: number; blotWins?: number; checkersMatches?: number; checkersWins?: number; checkersDraws?: number; chessMatches?: number; chessWins?: number; chessDraws?: number;
 }
 
 /** Short and long nardi, games won, mars, doubles… from the last 200 matches. */
@@ -13,6 +13,7 @@ export function StatsPanel({ s }: { s: DetailedStats | undefined }) {
   const { t } = useI18n();
   if (!s || !s.games) return null;
   const tiles: [string, React.ReactNode][] = [
+    [t('variant.blot'), `${s.blotWins ?? 0} / ${s.blotMatches ?? 0}`],
     [t('variant.short'), `${s.shortWins} / ${s.shortMatches}`],
     [t('variant.long'), `${s.longWins} / ${s.longMatches}`],
     [t('variant.checkers'), `${s.checkersWins ?? 0} / ${s.checkersMatches ?? 0}${s.checkersDraws ? ` · ${s.checkersDraws} ${t('stats.draws')}` : ''}`],
