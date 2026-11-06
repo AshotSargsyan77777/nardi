@@ -1,6 +1,8 @@
 'use client';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
+import { GAME_KINDS, GameKind, kindOf } from '@nardi/engine';
+import { ClockPicker, KIND_ICON, kindRules } from './PlayActions';
 import { Field, Toggle, inputCls } from './ui';
 
 export interface RoomSettingsValue {
@@ -12,7 +14,7 @@ export interface RoomSettingsValue {
 }
 
 export function defaultRoomSettings(defaults?: Record<string, any>): RoomSettingsValue {
-  return { rules: { variant: defaults?.variant ?? 'short', targetScore: defaults?.targetScore ?? 3, turnTimeoutSec: defaults?.turnTimeoutSec ?? 45 }, stake: 0, currency: 'FUN', chatEnabled: true, allowBots: true };
+  return { rules: { game: 'nardi', variant: defaults?.variant ?? 'short', targetScore: defaults?.targetScore ?? 3, turnTimeoutSec: defaults?.turnTimeoutSec ?? 45 }, stake: 0, currency: 'FUN', chatEnabled: true, allowBots: true };
 }
 
 /** Only shows options the owner made host-editable; all values are re-validated by the server. */
@@ -21,25 +23,36 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
   const { config } = useApp();
   if (!config) return null;
   const g = config.game;
-  const editable = new Set(g.hostEditableRules);
+  const kind = kindOf(value.rules);
+  const nardi = kind === 'short' || kind === 'long';
+  // nardi: what the owner lets hosts change; checkers: the move timer; chess: the clock
+  const editable = new Set(nardi ? g.hostEditableRules : kind === 'checkers' ? ['turnTimeoutSec', 'botLevel'] : ['botLevel']);
   const rule = (k: string) => value.rules[k] ?? g.defaultRules[k];
+  const setKind = (k: GameKind) => {
+    const keep = k === 'short' || k === 'long' ? { targetScore: rule('targetScore'), turnTimeoutSec: rule('turnTimeoutSec'), marsEnabled: rule('marsEnabled') } : k === 'checkers' ? { turnTimeoutSec: rule('turnTimeoutSec') } : {};
+    onChange({ ...value, rules: { ...kindRules(k), ...keep, botLevel: rule('botLevel') } });
+  };
+  const clock = `${value.rules.clockMin ?? 5}+${value.rules.clockInc ?? 0}`;
   const setRule = (k: string, v: any) => onChange({ ...value, rules: { ...value.rules, [k]: v } });
   const stakeOptions = g.stakeOptions[value.currency] ?? [0];
   const currencies = (['FUN'] as const).filter((c) => (g.stakeOptions[c] ?? []).length > 0);
   return (
     <div className="space-y-4">
-      {editable.has('variant') && (
-        <div className="grid grid-cols-2 gap-2">
-          {(['short', 'long'] as const).map((v) => (
-            <button key={v} type="button" disabled={disabled} onClick={() => setRule('variant', v)} className={`rounded-2xl p-3 text-left ring-1 transition ${rule('variant') === v ? 'bg-gold-400/15 ring-gold-400/60' : 'bg-black/20 ring-white/10'}`}>
-              <div className="font-bold">{t(`variant.${v}`)}</div>
-              <div className="text-xs text-white/50">{t(`variant.${v}.sub`)}</div>
-            </button>
-          ))}
-        </div>
+      <div className="grid grid-cols-2 gap-2">
+        {GAME_KINDS.map((v) => (
+          <button key={v} type="button" disabled={disabled} onClick={() => setKind(v)} className={`rounded-2xl p-3 text-left ring-1 transition ${kind === v ? 'bg-gold-400/15 ring-gold-400/60' : 'bg-black/20 ring-white/10'}`}>
+            <div className="font-bold">{KIND_ICON[v]} {t(`variant.${v}`)}</div>
+            <div className="text-xs text-white/50">{t(`variant.${v}.sub`)}</div>
+          </button>
+        ))}
+      </div>
+      {kind === 'chess' && (
+        <Field label={t('chess.clock')}>
+          <ClockPicker clock={clock} onChange={(c) => { if (disabled) return; const [m, i] = c.split('+').map(Number); onChange({ ...value, rules: { ...value.rules, clockMin: m, clockInc: i } }); }} />
+        </Field>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        {editable.has('targetScore') && (
+        {nardi && editable.has('targetScore') && (
           <Field label={t('friends.targetScore')}>
             <select disabled={disabled} className={inputCls} value={rule('targetScore')} onChange={(e) => setRule('targetScore', Number(e.target.value))}>
               {g.allowedTargetScores.map((n) => <option key={n} value={n}>{n === 1 ? t('friends.oneGame') : t('friends.toPoints', { n })}</option>)}
@@ -77,7 +90,7 @@ export function RoomSettingsForm({ value, onChange, disabled }: { value: RoomSet
       </div>
       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/50">{t('friends.rulesHeading')}</div>
       <div className="divide-y divide-white/5 rounded-xl bg-black/20 px-3">
-        {editable.has('marsEnabled') && <Toggle disabled={disabled} label={t('friends.marsEnabled')} checked={!!rule('marsEnabled')} onChange={(v) => setRule('marsEnabled', v)} />}
+        {nardi && editable.has('marsEnabled') && <Toggle disabled={disabled} label={t('friends.marsEnabled')} checked={!!rule('marsEnabled')} onChange={(v) => setRule('marsEnabled', v)} />}
         <Toggle disabled={disabled} label={t('friends.chat')} checked={value.chatEnabled} onChange={(v) => onChange({ ...value, chatEnabled: v })} />
         {config.features.practiceBotsEnabled && (
           <Toggle disabled={disabled || value.stake > 0} label={t('friends.allowBots')} checked={value.allowBots && value.stake === 0} onChange={(v) => onChange({ ...value, allowBots: v })} />

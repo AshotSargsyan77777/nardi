@@ -1,0 +1,2 @@
+Chess pieces: "Cburnett" set by Colin M.L. Burnett (https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces),
+licensed under GFDL / BSD / GPL (used here under the BSD licence), as bundled in react-chessboard (MIT).

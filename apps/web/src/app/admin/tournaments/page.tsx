@@ -43,7 +43,7 @@ export default function AdminTournaments() {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('admin.tourneyName')}><input className={inputCls} value={f.name} onChange={set('name')} maxLength={60} /></Field>
           <Field label={t('admin.tourneyStarts')}><input className={inputCls} type="datetime-local" value={f.startsAt} onChange={set('startsAt')} /></Field>
-          <Field label={t('friends.variant')}><select className={inputCls} value={f.variant} onChange={set('variant')}><option value="short">{t('variant.short')}</option><option value="long">{t('variant.long')}</option></select></Field>
+          <Field label={t('friends.variant')}><select className={inputCls} value={f.variant} onChange={set('variant')}>{['short', 'long', 'checkers', 'chess'].map((k) => <option key={k} value={k}>{t(`variant.${k}`)}</option>)}</select></Field>
           <Field label={t('friends.targetScore')}><select className={inputCls} value={f.targetScore} onChange={set('targetScore')}>{[1, 3, 5, 7].map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>
           <Field label={t('admin.tourneyMax')}><select className={inputCls} value={f.maxPlayers} onChange={set('maxPlayers')}>{[4, 8, 16, 32].map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>
           <Field label={t('admin.tourneyPrizes')}><input className={inputCls} value={f.prizes} onChange={set('prizes')} /></Field>

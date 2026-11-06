@@ -1,5 +1,5 @@
 'use client';
-import { Action, GameEvent, GameResult, MatchDTO, Move, Seat, SeatInfo, applySteps, diceMoves, remainingDice, unapplySteps, viewBoardAfter, viewHint, viewMoveOptions } from '@nardi/engine';
+import { Action, GameEvent, GameResult, MatchDTO, Move, PlayerView, Seat, SeatInfo, applySteps, diceMoves, remainingDice, unapplySteps, viewBoardAfter, viewHint, viewMoveOptions } from '@nardi/engine';
 import type { Board as BoardState } from '@nardi/engine';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
@@ -19,7 +19,7 @@ import { Coach, TipId } from './Coach';
 import { Confetti } from './Confetti';
 import { EmotePanel, useEmoteText } from './EmotePanel';
 
-function useCountdown(deadline: number | null) {
+export function useCountdown(deadline: number | null) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!deadline) return;
@@ -30,9 +30,13 @@ function useCountdown(deadline: number | null) {
 }
 
 /** A player's plate: avatar with the turn timer, name, checker colour, pips and a speech bubble. */
-function Plate({ info, seat, active, secondsLeft, total, pips, emote, onClick, right = false }: {
-  info: SeatInfo; seat: Seat; active: boolean; secondsLeft: number | null; total: number; pips: number;
+export function Plate({ info, seat, active, secondsLeft, total, pips, emote, onClick, right = false, extra, dotClass }: {
+  info: SeatInfo; seat: Seat; active: boolean; secondsLeft: number | null; total: number; pips: number | null;
   emote: { key: number; text: string } | null; onClick?: () => void; right?: boolean;
+  /** Shown after the name line (e.g. a chess clock). */
+  extra?: React.ReactNode;
+  /** The colour dot on the avatar (default: light / dark nardi checker). */
+  dotClass?: string;
 }) {
   const { t } = useI18n();
   const pct = active && secondsLeft !== null && total ? secondsLeft / total : 1;
@@ -44,16 +48,17 @@ function Plate({ info, seat, active, secondsLeft, total, pips, emote, onClick, r
           {active && <circle cx="18" cy="18" r="16.5" fill="none" stroke={pct < 0.3 ? '#e0435c' : '#eabd55'} strokeWidth="2.5" strokeDasharray={`${pct * 103.7} 103.7`} strokeLinecap="round" />}
         </svg>
         <Avatar name={info.avatar} size={40} />
-        <span className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full ring-2 ring-ink-900 ${seat === 0 ? 'bg-[#f4ead2]' : 'bg-[#2a1a14] ring-gold-500/60'}`} title={seat === 0 ? t('game.light') : t('game.dark')} />
+        <span className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full ring-2 ring-ink-900 ${dotClass ?? (seat === 0 ? 'bg-[#f4ead2]' : 'bg-[#2a1a14] ring-gold-500/60')}`} title={seat === 0 ? t('game.light') : t('game.dark')} />
         {!info.connected && <span className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-ruby-500 ring-2 ring-ink-900" title={t('game.disconnected')} />}
       </div>
       <div className="min-w-0">
         <div className="max-w-[130px] truncate text-sm font-bold">{info.nickname}</div>
         <div className={`flex items-center gap-1.5 text-[11px] text-white/50 ${right ? 'justify-end' : ''}`}>
           {info.isBot ? <span>{t('common.bot')}</span> : info.rating ? <span>★ {info.rating}</span> : null}
-          <span title={t('game.pipsHint')}>{t('game.pips')}: <b className="text-white/80">{pips}</b></span>
+          {pips !== null && <span title={t('game.pipsHint')}>{t('game.pips')}: <b className="text-white/80">{pips}</b></span>}
           {active && secondsLeft !== null && <span className="font-bold text-gold-300">{secondsLeft}s</span>}
         </div>
+        {extra}
       </div>
       <AnimatePresence>
         {emote && (
@@ -72,7 +77,7 @@ function Plate({ info, seat, active, secondsLeft, total, pips, emote, onClick, r
   );
 }
 
-export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator = false }: { dto: MatchDTO; onAction: (a: Action) => void; onLeave: () => void; busy: boolean; actionError: string | null; spectator?: boolean }) {
+export function GameTable({ dto, onAction, onLeave, busy, actionError, spectator = false }: { dto: MatchDTO<PlayerView>; onAction: (a: Action) => void; onLeave: () => void; busy: boolean; actionError: string | null; spectator?: boolean }) {
   const { t } = useI18n();
   const { connected, socket } = useApp();
   const v = dto.view;
@@ -475,7 +480,7 @@ export function GameSummary({ r, mySeat, nameOf, spectator = false }: { r: GameR
 }
 
 /** The other player: profile, mute, block, report. */
-function PlayerMenu({ nickname, matchId, muted, onMute, onClose }: { nickname: string; matchId: string; muted: boolean; onMute: () => void; onClose: () => void }) {
+export function PlayerMenu({ nickname, matchId, muted, onMute, onClose }: { nickname: string; matchId: string; muted: boolean; onMute: () => void; onClose: () => void }) {
   const { t } = useI18n();
   const { data: p, mutate } = useSWR<any>(`/users/profile/${encodeURIComponent(nickname)}`);
   return (

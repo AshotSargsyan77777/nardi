@@ -281,7 +281,7 @@ export class TournamentsService implements OnModuleInit, OnApplicationShutdown {
     const mine = userId ? new Set((await this.prisma.tournamentEntry.findMany({ where: { userId, tournamentId: { in: [...open, ...recent].map((t) => t.id) } }, select: { tournamentId: true } })).map((e) => e.tournamentId)) : new Set<string>();
     const winners = await this.prisma.user.findMany({ where: { id: { in: recent.map((t) => t.winnerId).filter((x): x is string => !!x) } }, select: { id: true, nickname: true } });
     const view = (t: (typeof open)[number]) => ({
-      id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, finishedAt: t.finishedAt, variant: kindOf(t.rules), targetScore: (t.rules as any)?.targetScore ?? 1,
+      id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, finishedAt: t.finishedAt, variant: kindOf(t.rules), targetScore: (t.rules as any)?.targetScore ?? 1, clock: (t.rules as any)?.game === 'chess' ? `${(t.rules as any).clockMin}+${(t.rules as any).clockInc}` : null,
       maxPlayers: t.maxTeams, players: t._count.entries, prizes: t.prizes, joined: mine.has(t.id), auto: t.auto,
       winner: winners.find((w) => w.id === t.winnerId)?.nickname ?? null,
     });

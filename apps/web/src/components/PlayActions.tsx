@@ -1,6 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { CHESS_CLOCKS, GAME_KINDS, GameKind, rulesForKind } from '@nardi/engine';
 import { api } from '@/lib/api';
 import { useApp } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
@@ -46,39 +47,70 @@ export function BotLevelPicker({ level, onChange }: { level: BotLevel; onChange:
   );
 }
 
-export type Variant = 'short' | 'long';
+/** What to play: short or long nardi, checkers or chess (remembered on this device). */
+export type Variant = GameKind;
 const VARIANT_KEY = 'bb_variant';
+const CLOCK_KEY = 'bb_chess_clock';
+export const KIND_ICON: Record<GameKind, string> = { short: '🎲', long: '🎲', checkers: '⛀', chess: '♞' };
 
-/** Short or long nardi, as this device last chose (remembered). */
-export function useVariant() {
-  const [variant, setVariant] = useState<Variant>('short');
+function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T) {
+  const [v, setV] = useState<T>(fallback);
   useEffect(() => {
     try {
-      const v = localStorage.getItem(VARIANT_KEY);
-      if (v === 'short' || v === 'long') setVariant(v);
+      const x = localStorage.getItem(key);
+      if (x && (allowed as readonly string[]).includes(x)) setV(x as T);
     } catch {
       /* storage unavailable */
     }
-  }, []);
-  const set = (v: Variant) => {
-    setVariant(v);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (x: T) => {
+    setV(x);
     try {
-      localStorage.setItem(VARIANT_KEY, v);
+      localStorage.setItem(key, x);
     } catch {
       /* ignore */
     }
   };
-  return [variant, set] as const;
+  return [v, set] as const;
 }
 
-/** Two chips: short / long nardi. */
+export function useVariant() {
+  return remembered<GameKind>(VARIANT_KEY, GAME_KINDS, 'short');
+}
+export const CLOCKS = CHESS_CLOCKS.map(([m, i]) => `${m}+${i}`);
+/** The chess clock this device prefers, like «5+0». */
+export function useChessClock() {
+  return remembered<string>(CLOCK_KEY, CLOCKS, '5+0');
+}
+/** The rules (and random-queue suffix) for a kind and, for chess, a clock. */
+export function kindRules(kind: GameKind, clock = '5+0'): Record<string, unknown> {
+  const [m, i] = clock.split('+').map(Number);
+  return rulesForKind(kind, {}, kind === 'chess' ? { clockMin: m, clockInc: i } : {});
+}
+export const queueSuffix = (kind: GameKind, clock = '5+0') => (kind === 'chess' ? `chess:${clock}` : kind);
+
+/** Four chips: short nardi, long nardi, checkers, chess. */
 export function VariantPicker({ variant, onChange }: { variant: Variant; onChange: (v: Variant) => void }) {
   const { t } = useI18n();
   return (
-    <div className="flex justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      {(['short', 'long'] as const).map((v) => (
+    <div className="flex flex-wrap justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+      {GAME_KINDS.map((v) => (
         <button key={v} type="button" onClick={() => onChange(v)} className={`rounded-full px-3 py-1 text-xs font-bold transition ${variant === v ? 'bg-felt-600 text-white ring-1 ring-felt-500' : 'bg-white/10 text-white/70'}`}>
-          {t(`variant.${v}`)}
+          {KIND_ICON[v]} {t(`variant.${v}`)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Chess clocks: 1+0, 3+2, 5+0 … */
+export function ClockPicker({ clock, onChange }: { clock: string; onChange: (c: string) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-wrap justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+      {CLOCKS.map((c) => (
+        <button key={c} type="button" title={t('chess.clockHint')} onClick={() => onChange(c)} className={`rounded-full px-2.5 py-1 font-mono text-xs font-bold transition ${clock === c ? 'bg-gold-grad text-ink-950' : 'bg-white/10 text-white/70'}`}>
+          ⏱ {c}
         </button>
       ))}
     </div>
@@ -92,11 +124,12 @@ export function usePractice() {
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useBotLevel();
   const [variant, setVariant] = useVariant();
+  const [clock, setClock] = useChessClock();
   const start = async () => {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ matchId: string }>('/matches/practice', { method: 'POST', body: { rules: { botLevel: level, variant } } });
+      const r = await api<{ matchId: string }>('/matches/practice', { method: 'POST', body: { rules: { ...kindRules(variant, clock), botLevel: level } } });
       router.push(`/match/${r.matchId}`);
     } catch (e: any) {
       setError(e.message);
@@ -109,14 +142,14 @@ export function usePractice() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ matchId: string }>('/matches/practice', { method: 'POST', body: { rules: { botLevel: 'easy', variant } } });
+      const r = await api<{ matchId: string }>('/matches/practice', { method: 'POST', body: { rules: { ...kindRules(variant, clock), botLevel: 'easy' } } });
       router.push(`/match/${r.matchId}`);
     } catch (e: any) {
       setError(e.message);
       setBusy(false);
     }
   };
-  return { start, learn, busy, error, level, setLevel, variant, setVariant };
+  return { start, learn, busy, error, level, setLevel, variant, setVariant, clock, setClock };
 }
 
 export function PlayModes({ compact = false }: { compact?: boolean }) {
@@ -130,6 +163,8 @@ export function PlayModes({ compact = false }: { compact?: boolean }) {
       {config?.features.practiceBotsEnabled !== false && (
         <div className="space-y-2">
           <LinkCard onClick={practice.start} disabled={practice.busy} icon="🤖" title={t('home.playFree')} sub={practice.error ?? t('home.playFreeSub')} accent="emerald" />
+          <VariantPicker variant={practice.variant} onChange={practice.setVariant} />
+          {practice.variant === 'chess' && <ClockPicker clock={practice.clock} onChange={practice.setClock} />}
           <BotLevelPicker level={practice.level} onChange={practice.setLevel} />
           <button onClick={practice.learn} className="block w-full text-center text-xs font-semibold text-gold-300 hover:underline">🎓 {t('tip.learn')}</button>
         </div>

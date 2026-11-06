@@ -1,5 +1,6 @@
 'use client';
-import { MatchmakingStatus } from '@nardi/engine';
+import { GAME_KINDS, MatchmakingStatus } from '@nardi/engine';
+import { ClockPicker, KIND_ICON, queueSuffix, useChessClock, useVariant } from '@/components/PlayActions';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -27,7 +28,8 @@ export default function RandomPage() {
   const { data: initial } = useSWR<MatchmakingStatus>(me ? '/matchmaking/status' : null);
   const [status, setStatus] = useState<MatchmakingStatus | null>(null);
   const [queue, setQueue] = useState('casual');
-  const [variant, setVariant] = useState<'short' | 'long'>('short');
+  const [variant, setVariant] = useVariant();
+  const [clock, setClock] = useChessClock();
   const [error, setError] = useState<string | null>(null);
   const st = status ?? initial ?? null;
   const now = useNow(st?.state === 'searching' || st?.state === 'proposal');
@@ -76,13 +78,14 @@ export default function RandomPage() {
       ) : (
         <Panel title={t('random.chooseQueue')}>
           <div className="mb-3 grid grid-cols-2 gap-2">
-            {(['short', 'long'] as const).map((v) => (
+            {GAME_KINDS.map((v) => (
               <button key={v} onClick={() => setVariant(v)} className={`rounded-2xl p-3 text-left ring-1 transition ${variant === v ? 'bg-gold-400/15 ring-gold-400/60' : 'bg-black/20 ring-white/10'}`}>
-                <div className="font-bold">{t(`variant.${v}`)}</div>
+                <div className="font-bold">{KIND_ICON[v]} {t(`variant.${v}`)}</div>
                 <div className="text-xs text-white/50">{t(`variant.${v}.sub`)}</div>
               </button>
             ))}
           </div>
+          {variant === 'chess' && <div className="mb-3"><ClockPicker clock={clock} onChange={setClock} /></div>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {queues.map((q) => (
               <button key={q.id} onClick={() => setQueue(q.id)} className={`flex items-center gap-3 rounded-2xl p-4 text-left ring-1 transition ${queue === q.id ? 'bg-gold-400/10 ring-gold-400/60' : 'bg-black/20 ring-white/10 hover:ring-white/25'}`}>
@@ -96,7 +99,7 @@ export default function RandomPage() {
           </div>
           <div className="mt-5 space-y-3">
             {error && <ErrorText error={error} />}
-            <Button variant="gold" size="lg" className="w-full sm:w-auto" disabled={!connected} onClick={() => emit('mm:join', { queue: `${queue}@${variant}` })}>🎲 {t('random.search')}</Button>
+            <Button variant="gold" size="lg" className="w-full sm:w-auto" disabled={!connected} onClick={() => emit('mm:join', { queue: `${queue}@${queueSuffix(variant, clock)}` })}>🎲 {t('random.search')}</Button>
             <p className="text-xs text-white/40">{t('wallet.balance')}: <Coins amount={me.balances.FUN} currency="FUN" /></p>
           </div>
         </Panel>

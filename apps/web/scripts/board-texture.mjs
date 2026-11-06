@@ -27,7 +27,7 @@ const OFF_X = VW - M - OFF_W;
 const colX = (col) => X0 + (col < 6 ? col * W : HALF + BAR_W + (col - 6) * W) + W / 2;
 
 const grain = (id, fx, fy, color, opacity, seed) => `
-  <filter id="${id}" x="0" y="0" width="${VW}" height="${VH}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+  <filter id="${id}" x="0" y="0" width="1000" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
     <feTurbulence type="fractalNoise" baseFrequency="${fx} ${fy}" numOctaves="5" seed="${seed}" result="n"/>
     <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.6 0 0 0 -0.3" result="a"/>
     <feComponentTransfer in="a" result="bands"><feFuncA type="table" tableValues="0 .85 .15 .7 .05 .9 .2 .6 .1 .8 0"/></feComponentTransfer>
@@ -40,7 +40,7 @@ const grain = (id, fx, fy, color, opacity, seed) => `
   </filter>`;
 
 const felt = (id, color) => `
-  <filter id="${id}" x="0" y="0" width="${VW}" height="${VH}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+  <filter id="${id}" x="0" y="0" width="1000" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
     <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="5" result="n"/>
     <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 1.4 0 -0.45" result="a"/>
     <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="8" result="m"/>
@@ -161,12 +161,50 @@ const THEMES = {
   pomegranate: { frame: '#5e1420', frameInk: '#140003', field: '#e4c79a', fieldInk: '#6e3b18', fieldInkOp: 0.3, ptA: '#7a1424', ptB: '#b5852f', bar: '#4a0f19', tray: '#2e0910', line: '#e8c06a', orn: '#9a2a36' },
 };
 
+/** The 8×8 board for chess and checkers (1000×1000; coordinates are drawn live). Keep in sync with SquareBoard.tsx. */
+const SQ_M = 40;
+const SQ = (1000 - 2 * SQ_M) / 8;
+const SQUARES = {
+  'squares-walnut': { frame: '#4f2c14', frameInk: '#0d0500', light: '#e6c493', lightInk: '#8a5a26', dark: '#86532e', darkInk: '#1e0d03', line: '#d6a45a' },
+  'squares-green': { frame: '#3b2414', frameInk: '#0d0500', light: '#eeeed2', lightInk: '#9a9a70', dark: '#6f9450', darkInk: '#1f3010', line: '#c9a86a' },
+};
+const buildSquares = (T) => {
+  let light = '', dark = '';
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const rect = `<rect x="${SQ_M + c * SQ}" y="${SQ_M + r * SQ}" width="${SQ + 0.5}" height="${SQ + 0.5}"/>`;
+    if ((r + c) % 2) dark += rect; else light += rect;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 1000 1000">
+<defs>
+  ${grain('g-frame', 0.004, 0.05, T.frameInk, 0.75, 4)}
+  ${grain('g-light', 0.006, 0.03, T.lightInk, 0.32, 12)}
+  ${grain('g-dark', 0.03, 0.006, T.darkInk, 0.45, 17)}
+  <linearGradient id="frameLight" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/></linearGradient>
+  <linearGradient id="sheen" x1="0" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".12"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+  <filter id="inset" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="6"/></filter>
+  <clipPath id="field"><rect x="${SQ_M}" y="${SQ_M}" width="${1000 - 2 * SQ_M}" height="${1000 - 2 * SQ_M}"/></clipPath>
+</defs>
+<g filter="url(#g-frame)"><rect width="1000" height="1000" rx="22" fill="${T.frame}"/></g>
+<rect width="1000" height="1000" rx="22" fill="url(#frameLight)"/>
+<rect x="1.5" y="1.5" width="997" height="997" rx="21" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="3"/>
+<rect x="6" y="6" width="988" height="988" rx="17" fill="none" stroke="#e7b77a" stroke-opacity=".2" stroke-width="1.5"/>
+<g filter="url(#g-light)" fill="${T.light}">${light}</g>
+<g filter="url(#g-dark)" fill="${T.dark}">${dark}</g>
+<g clip-path="url(#field)">
+  <rect x="${SQ_M}" y="${SQ_M}" width="${1000 - 2 * SQ_M}" height="${1000 - 2 * SQ_M}" fill="url(#sheen)"/>
+  <rect x="${SQ_M - 8}" y="${SQ_M - 8}" width="${1000 - 2 * SQ_M + 16}" height="${1000 - 2 * SQ_M + 16}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="16" filter="url(#inset)"/>
+</g>
+<rect x="${SQ_M - 4}" y="${SQ_M - 4}" width="${1000 - 2 * SQ_M + 8}" height="${1000 - 2 * SQ_M + 8}" fill="none" stroke="${T.line}" stroke-opacity=".55" stroke-width="2.5"/>
+</svg>`;
+};
+
 const out = join(dirname(fileURLToPath(import.meta.url)), '../public/board');
 mkdirSync(out, { recursive: true });
 const only = process.argv[2];
 const browser = await chromium.launch();
 const page = await browser.newPage();
-for (const [id, T] of Object.entries(THEMES)) {
+const jobs = [...Object.entries(THEMES).map(([id, T]) => [id, buildSvg(T)]), ...Object.entries(SQUARES).map(([id, T]) => [id, buildSquares(T)])];
+for (const [id, svgSrc] of jobs) {
   if (only && only !== id) continue;
   const data = await page.evaluate(async (src) => {
     const img = new Image();
@@ -177,7 +215,7 @@ for (const [id, T] of Object.entries(THEMES)) {
     c.height = img.naturalHeight;
     c.getContext('2d').drawImage(img, 0, 0);
     return c.toDataURL('image/webp', 0.84);
-  }, buildSvg(T));
+  }, svgSrc);
   writeFileSync(join(out, `${id}.webp`), Buffer.from(data.split(',')[1], 'base64'));
   console.log(`${id}.webp`, Math.round((data.length * 3) / 4 / 1024), 'KB');
 }

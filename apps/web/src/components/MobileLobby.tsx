@@ -10,7 +10,7 @@ import { InstallBanner } from './InstallApp';
 import { QuestsChip } from './Quests';
 import { PushToggle } from './PushToggle';
 import { NextTournament } from './NextTournament';
-import { BotLevelPicker, VariantPicker, usePractice } from './PlayActions';
+import { BotLevelPicker, ClockPicker, VariantPicker, usePractice } from './PlayActions';
 import { DiceArt } from './DiceArt';
 
 type Mode = { key: string; title: string; sub: string; art: React.ReactNode; play: () => void; busy?: boolean };
@@ -112,6 +112,7 @@ export function MobileLobby() {
         {cur.key === 'practice' ? (
           <div className="flex flex-wrap items-center justify-center gap-2">
             <VariantPicker variant={practice.variant} onChange={practice.setVariant} />
+            {practice.variant === 'chess' && <ClockPicker clock={practice.clock} onChange={practice.setClock} />}
             <BotLevelPicker level={practice.level} onChange={practice.setLevel} />
             <button onClick={practice.learn} className="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-gold-300 ring-1 ring-gold-400/30">🎓 {t('tip.learn')}</button>
           </div>

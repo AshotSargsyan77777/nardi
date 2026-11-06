@@ -44,7 +44,7 @@ export default function TournamentPage() {
   };
   return (
     <div className="space-y-5">
-      <PageTitle sub={`${t(`variant.${x.variant}`)} · ${t('game.toPoints', { n: x.targetScore })} · 👥 ${x.players.length}/${x.maxPlayers}`} action={<Link href="/tournaments"><Button size="sm">← {t('tourney.title')}</Button></Link>}>
+      <PageTitle sub={`${t(`variant.${x.variant}`)}${x.variant === 'short' || x.variant === 'long' ? ` · ${t('game.toPoints', { n: x.targetScore })}` : x.clock ? ` · ⏱ ${x.clock}` : ''} · 👥 ${x.players.length}/${x.maxPlayers}`} action={<Link href="/tournaments"><Button size="sm">← {t('tourney.title')}</Button></Link>}>
         🏆 {tourneyName(x, t)}
       </PageTitle>
 

@@ -17,7 +17,7 @@ export default function TournamentsPage() {
       <div className="text-3xl">🏆</div>
       <div className="min-w-0 flex-1">
         <div className="font-display text-lg font-extrabold">{tourneyName(x, t)}</div>
-        <div className="text-xs text-white/55">{t(`variant.${x.variant}`)} · {t('game.toPoints', { n: x.targetScore })} · 👥 {x.players}/{x.maxPlayers}</div>
+        <div className="text-xs text-white/55">{t(`variant.${x.variant}`)}{x.variant === 'short' || x.variant === 'long' ? ` · ${t('game.toPoints', { n: x.targetScore })}` : x.clock ? ` · ⏱ ${x.clock}` : ''} · 👥 {x.players}/{x.maxPlayers}</div>
         <div className="mt-1 text-xs text-gold-200">{x.status === 'FINISHED' ? `🥇 ${x.winner ?? '—'}` : <TourneyTime t={x} locale={locale} />}</div>
       </div>
       <div className="flex flex-col items-end gap-1">
