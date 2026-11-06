@@ -7,6 +7,7 @@ import useSWR from 'swr';
 import { Avatar } from '@/components/Avatar';
 import { NardiBoard } from '@/components/game/Board';
 import { usePortraitPhone } from '@/components/game/GameTable';
+import { DuelReplay } from './DuelReplay';
 import { Button, ErrorText, Loading, PageTitle } from '@/components/ui';
 import { useRequireAuth } from '@/lib/app-state';
 import { useI18n } from '@/lib/i18n';
@@ -99,6 +100,7 @@ export default function ReplayPage() {
 
   if (error) return <ErrorText error={error} />;
   if (!data || !me) return <Loading />;
+  if (data.rules?.game === 'chess' || data.rules?.game === 'checkers') return <DuelReplay data={data} meId={me.id} />;
   if (!frames.length) return <ErrorText error={new Error(t('replay.empty'))} />;
 
   const viewer: Seat = (data.players.find((p: any) => p.userId === me.id)?.seat ?? 0) as Seat;

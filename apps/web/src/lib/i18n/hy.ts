@@ -219,6 +219,7 @@ export const hy = {
   'stats.checkers': "Շաշկի",
   'stats.chess': "Շախմատ",
   'stats.draws': "ոչ-ոքի",
+  'replay.start': "Սկզբնական դասավորություն",
   'lb.month': 'Այս ամիս',
   'lb.allTime': 'Վարկանիշ',
   'lb.points': 'Միավոր',

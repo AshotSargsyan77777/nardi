@@ -220,6 +220,7 @@ export const en: Dict = {
   'stats.checkers': "Checkers",
   'stats.chess': "Chess",
   'stats.draws': "draws",
+  'replay.start': "Starting position",
   'lb.month': 'This month',
   'lb.allTime': 'Rating',
   'lb.points': 'Points',

@@ -220,6 +220,7 @@ export const ru: Dict = {
   'stats.checkers': "Шашки",
   'stats.chess': "Шахматы",
   'stats.draws': "ничьих",
+  'replay.start': "Начальная позиция",
   'lb.month': 'Этот месяц',
   'lb.allTime': 'Рейтинг',
   'lb.points': 'Очки',
